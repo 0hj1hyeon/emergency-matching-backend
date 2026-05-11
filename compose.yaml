@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  postgres:
+    # 위치 데이터(위도, 경도) 처리를 위해 일PostGIS 이미지 사용
+    image: postgis/postgis:15-3.3
+    container_name: ems-postgres
+    environment:
+      POSTGRES_USER: ems_user
+      POSTGRES_PASSWORD: ems_password
+      POSTGRES_DB: ems_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    # 실시간 통신(웹소켓) 확장과 분산 락(동시성 제어)을 위해 사용할 Redis 
+    image: redis:7-alpine
+    container_name: ems-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ems-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ems_user
+      RABBITMQ_DEFAULT_PASS: ems_password
+    ports:
+      - "5672:5672"   # 스프링 부트 등 애플리케이션 연결용 기본 포트
+      - "15672:15672" # 우리가 브라우저로 접속해서 볼 수 있는 관리자 화면 포트
+    restart: always
+
+volumes:
+  # DB 컨테이너가 삭제되도 데이터가 날아가지 않도록 컴퓨터 하드디스크에 저장 공간을 만듬
+  postgres_data:

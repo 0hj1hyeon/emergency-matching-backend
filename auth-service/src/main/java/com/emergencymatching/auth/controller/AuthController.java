@@ -20,9 +20,9 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<String> signup(@Valid @RequestBody AuthDto.SignupRequest request) {
+    public ResponseEntity<AuthDto.SignupResponse> signup(@Valid @RequestBody AuthDto.SignupRequest request) {
         authService.signup(request);
-        return ResponseEntity.ok("회원가입이 완료되었습니다.");
+        return ResponseEntity.ok(new AuthDto.SignupResponse(request.getUsername(), "회원가입이 완료되었습니다."));
     }
 
     @PostMapping("/login")

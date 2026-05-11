@@ -39,4 +39,11 @@ public class AuthDto {
     public static class TokenResponse { 
         private String accessToken;
     }
+
+    @Getter
+    @AllArgsConstructor
+    public static class SignupResponse {
+        private String username;
+        private String message;
+    }
 }

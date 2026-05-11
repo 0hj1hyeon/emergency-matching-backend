@@ -17,6 +17,11 @@ spring:
         show_sql: true
         format_sql: true
 
+jwt:
+  # 실운영 시에는 환경 변수 등으로 관리해야 합니다.
+  secret: "defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#"
+  expiration-time: 3600000 # 1시간 (밀리초 단위)
+
 management:
   endpoints:
     web:

@@ -2,8 +2,10 @@ package com.emergencymatching.auth.service;
 
 import com.emergencymatching.auth.domain.Member;
 import com.emergencymatching.auth.dto.AuthDto;
+import com.emergencymatching.auth.exception.AuthException;
 import com.emergencymatching.auth.repository.MemberRepository;
 import com.emergencymatching.auth.security.JwtTokenProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +41,10 @@ public class AuthService {
 
     public AuthDto.TokenResponse login(AuthDto.LoginRequest request) {
         Member member = memberRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("가입되지 않은 아이디입니다."));
+                .orElseThrow(() -> new AuthException("가입되지 않은 아이디입니다.", HttpStatus.UNAUTHORIZED));
 
         if (!passwordEncoder.matches(request.getPassword(), member.getPassword())) {
-            throw new IllegalArgumentException("잘못된 비밀번호입니다.");
+            throw new AuthException("잘못된 비밀번호입니다.", HttpStatus.UNAUTHORIZED);
         }
 
         String token = jwtTokenProvider.createToken(member.getUsername(), member.getRole().name());

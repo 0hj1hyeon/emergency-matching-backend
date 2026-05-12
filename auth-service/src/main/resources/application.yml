@@ -4,10 +4,23 @@ server:
 spring:
   application:
     name: auth-service
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ems_db
+    username: ems_user
+    password: ems_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        show_sql: true
+        format_sql: true
+
+jwt:
+  # 실운영 시에는 환경 변수 등으로 관리해야 합니다.
+  secret: "defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#"
+  expiration-time: 3600000 # 1시간 (밀리초 단위)
 
 management:
   endpoints:

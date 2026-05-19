@@ -18,8 +18,8 @@ spring:
         format_sql: true
 
 jwt:
-  # 실운영 시에는 환경 변수 등으로 관리해야 합니다.
-  secret: "defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#"
+  # 환경 변수 JWT_SECRET 값을 우선적으로 사용하며, 없으면 로컬 개발용 기본값을 사용합니다.
+  secret: ${JWT_SECRET:defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#}
   expiration-time: 3600000 # 1시간 (밀리초 단위)
 
 management:

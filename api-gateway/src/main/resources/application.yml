@@ -5,6 +5,35 @@ spring:
   application:
     name: api-gateway
 
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            # 보안 권고(gemini-code-assist)에 따라 모든 출처(*) 허용 대신 프론트엔드 도메인만 명시적으로 허용합니다.
+            # 실운영 환경에서는 실제 프론트엔드 URL(예: https://ems-frontend.com)로 변경해야 합니다.
+            allowedOrigins: "http://localhost:3000"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+      routes:
+        # 로그인, 회원가입은 필터 없이 통과
+        - id: auth-service-public
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/auth/signup, /api/auth/login
+        
+        # (예시) 나중에 추가될 다른 서비스들은 JWT 필터를 거쳐야 함
+        # - id: emergency-service
+        #   uri: http://localhost:8082
+        #   predicates:
+        #     - Path=/api/emergency/**
+        #   filters:
+        #     - JwtAuthenticationFilter
+
+jwt:
+  # 환경 변수 JWT_SECRET 값을 우선적으로 사용하며, 없으면 로컬 개발용 기본값을 사용합니다.
+  secret: ${JWT_SECRET:defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#}
+
 management:
   endpoints:
     web:

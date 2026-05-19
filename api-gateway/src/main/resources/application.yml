@@ -10,8 +10,6 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            # 보안 권고(gemini-code-assist)에 따라 모든 출처(*) 허용 대신 프론트엔드 도메인만 명시적으로 허용합니다.
-            # 실운영 환경에서는 실제 프론트엔드 URL(예: https://ems-frontend.com)로 변경해야 합니다.
             allowedOrigins: "http://localhost:3000"
             allowedMethods: "*"
             allowedHeaders: "*"
@@ -22,16 +20,31 @@ spring:
           predicates:
             - Path=/api/auth/signup, /api/auth/login
         
-        # (예시) 나중에 추가될 다른 서비스들은 JWT 필터를 거쳐야 함
-        # - id: emergency-service
-        #   uri: http://localhost:8082
-        #   predicates:
-        #     - Path=/api/emergency/**
-        #   filters:
-        #     - JwtAuthenticationFilter
+        # Hospital Service 
+        - id: hospital-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/hospitals/**
+          filters:
+            - JwtAuthenticationFilter
+
+        # Emergency Service 
+        - id: emergency-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/emergencies/**
+          filters:
+            - JwtAuthenticationFilter
+
+        # Notification Service 
+        - id: notification-service
+          uri: http://localhost:8084
+          predicates:
+            - Path=/ws/**
+          filters:
+            - JwtAuthenticationFilter
 
 jwt:
-  # 환경 변수 JWT_SECRET 값을 우선적으로 사용하며, 없으면 로컬 개발용 기본값을 사용합니다.
   secret: ${JWT_SECRET:defaultSecretKeyForEmergencyMatchingSystemVeryLongKey1234567890!@#}
 
 management:

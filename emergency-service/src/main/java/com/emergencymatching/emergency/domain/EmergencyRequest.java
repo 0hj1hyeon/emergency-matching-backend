@@ -107,6 +107,13 @@ public class EmergencyRequest {
         );
     }
 
+    public void broadcast() {
+        if (this.status != EmergencyRequestStatus.REQUESTED) {
+            throw new IllegalStateException("REQUESTED 상태의 요청만 전송(BROADCAST)할 수 있습니다.");
+        }
+        this.status = EmergencyRequestStatus.BROADCASTED;
+    }
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();

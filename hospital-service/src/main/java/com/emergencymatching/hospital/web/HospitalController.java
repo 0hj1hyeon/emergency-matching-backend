@@ -3,6 +3,8 @@ package com.emergencymatching.hospital.web;
 import com.emergencymatching.hospital.service.HospitalService;
 import com.emergencymatching.hospital.web.dto.CreateHospitalRequest;
 import com.emergencymatching.hospital.web.dto.HospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalSearchRequest;
 import com.emergencymatching.hospital.web.dto.UpdateHospitalAvailabilityRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -39,6 +41,13 @@ public class HospitalController {
     @GetMapping
     public ResponseEntity<List<HospitalResponse>> getHospitals() {
         return ResponseEntity.ok(hospitalService.getHospitals());
+    }
+
+    @GetMapping("/nearby")
+    public ResponseEntity<List<NearbyHospitalResponse>> getNearbyHospitals(
+            @Valid NearbyHospitalSearchRequest request
+    ) {
+        return ResponseEntity.ok(hospitalService.getNearbyHospitals(request));
     }
 
     @GetMapping("/{hospitalId}")

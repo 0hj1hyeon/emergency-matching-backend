@@ -4,12 +4,18 @@ server:
 spring:
   application:
     name: notification-service
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ems_user
+    password: ems_password
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+logging:
+  file:
+    name: notification-service.log

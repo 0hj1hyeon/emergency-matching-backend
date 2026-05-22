@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    # 위치 데이터(위도, 경도) 처리를 위해 일PostGIS 이미지 사용
+    # 위치 데이터(위도, 경도) 처리를 위해 PostGIS 이미지 사용
     image: postgis/postgis:15-3.3
     container_name: ems-postgres
     environment:
@@ -13,6 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/init/postgres:/docker-entrypoint-initdb.d:ro
     restart: always
 
   redis:

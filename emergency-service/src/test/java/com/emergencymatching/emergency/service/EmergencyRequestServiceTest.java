@@ -2,22 +2,29 @@ package com.emergencymatching.emergency.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.emergencymatching.emergency.client.HospitalServiceClient;
+import com.emergencymatching.emergency.client.HospitalClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
+import com.emergencymatching.emergency.domain.HospitalResponse;
+import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
+import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +32,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,10 +41,10 @@ class EmergencyRequestServiceTest {
     private EmergencyRequestRepository emergencyRequestRepository;
 
     @Mock
-    private HospitalServiceClient hospitalServiceClient;
+    private HospitalResponseRepository hospitalResponseRepository;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private HospitalClient hospitalClient;
 
     @InjectMocks
     private EmergencyRequestService emergencyRequestService;
@@ -48,9 +54,8 @@ class EmergencyRequestServiceTest {
         CreateEmergencyRequestRequest request = createRequest();
         given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
                 .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
-        // 2주차 검증 핵심: Feign Client 호출 시 가상 병원 목록을 내려주도록 Mocking!
-        given(hospitalServiceClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
-                .willReturn(java.util.List.of(new HospitalResponseDto(1L, "가상병원", 1.2, true)));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willReturn(List.of(hospitalResponse(1L), hospitalResponse(2L)));
 
         EmergencyRequestResponse response = emergencyRequestService.createEmergencyRequest(request);
 
@@ -62,31 +67,96 @@ class EmergencyRequestServiceTest {
         assertThat(response.severityLevel()).isEqualTo(SeverityLevel.CRITICAL);
         assertThat(response.latitude()).isEqualTo(37.5665);
         assertThat(response.longitude()).isEqualTo(126.9780);
+        assertThat(response.status()).isEqualTo(EmergencyRequestStatus.BROADCASTED);
+        assertThat(response.candidateHospitals()).hasSize(2);
+    }
 
-        // 2주차 검증 핵심: RabbitMQ 비동기 이벤트가 규격에 맞게 잘 전송되었는지 확인!
-        verify(rabbitTemplate).convertAndSend(
-                org.mockito.ArgumentMatchers.eq("emergency.exchange"),
-                org.mockito.ArgumentMatchers.eq("emergency.request.created"),
-                any(com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent.class)
+    @Test
+    void createEmergencyRequestCallsHospitalClient() {
+        CreateEmergencyRequestRequest request = createRequest();
+        given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
+                .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
+        given(hospitalClient.getNearbyHospitals(any(), any(), any()))
+                .willReturn(List.of(hospitalResponse(1L)));
+
+        emergencyRequestService.createEmergencyRequest(request);
+
+        verify(hospitalClient).getNearbyHospitals(
+                eq(37.5665),
+                eq(126.9780),
+                eq(5.0)
         );
     }
 
     @Test
-    void createEmergencyRequestSavesBroadcastedStatus() {
+    void createEmergencyRequestCreatesPendingHospitalResponsesWhenCandidatesExist() {
         CreateEmergencyRequestRequest request = createRequest();
         given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
                 .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
-        // Feign Client 가상 모의 주입
-        given(hospitalServiceClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
-                .willReturn(java.util.List.of(new HospitalResponseDto(1L, "가상병원", 1.2, true)));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willReturn(List.of(hospitalResponse(10L), hospitalResponse(20L)));
+
+        emergencyRequestService.createEmergencyRequest(request);
+
+        ArgumentCaptor<Iterable<HospitalResponse>> captor = hospitalResponseIterableCaptor();
+        verify(hospitalResponseRepository).saveAll(captor.capture());
+
+        List<HospitalResponse> responses = toList(captor.getValue());
+        assertThat(responses).hasSize(2);
+        assertThat(responses)
+                .extracting(HospitalResponse::getEmergencyRequestId)
+                .containsOnly(1L);
+        assertThat(responses)
+                .extracting(HospitalResponse::getHospitalId)
+                .containsExactly(10L, 20L);
+        assertThat(responses)
+                .extracting(HospitalResponse::getStatus)
+                .containsOnly(HospitalResponseStatus.PENDING);
+    }
+
+    @Test
+    void createEmergencyRequestChangesStatusToBroadcastedWhenCandidatesExist() {
+        CreateEmergencyRequestRequest request = createRequest();
+        given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
+                .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willReturn(List.of(hospitalResponse(1L)));
 
         emergencyRequestService.createEmergencyRequest(request);
 
         ArgumentCaptor<EmergencyRequest> captor = ArgumentCaptor.forClass(EmergencyRequest.class);
         verify(emergencyRequestRepository).save(captor.capture());
-
-        // 2주차 비즈니스 규칙: 저장 후 즉시 BROADCASTED 상태로 전환됨!
         assertThat(captor.getValue().getStatus()).isEqualTo(EmergencyRequestStatus.BROADCASTED);
+    }
+
+    @Test
+    void createEmergencyRequestDoesNotCreateHospitalResponsesWhenCandidatesDoNotExist() {
+        CreateEmergencyRequestRequest request = createRequest();
+        given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
+                .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willReturn(List.of());
+
+        EmergencyRequestResponse response = emergencyRequestService.createEmergencyRequest(request);
+
+        verify(hospitalResponseRepository, never()).saveAll(any());
+        assertThat(response.status()).isEqualTo(EmergencyRequestStatus.REQUESTED);
+        assertThat(response.candidateHospitals()).isEmpty();
+    }
+
+    @Test
+    void createEmergencyRequestKeepsRequestedStatusWhenHospitalClientFails() {
+        CreateEmergencyRequestRequest request = createRequest();
+        given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
+                .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willThrow(new RuntimeException("hospital-service unavailable"));
+
+        EmergencyRequestResponse response = emergencyRequestService.createEmergencyRequest(request);
+
+        verify(hospitalResponseRepository, never()).saveAll(any());
+        assertThat(response.status()).isEqualTo(EmergencyRequestStatus.REQUESTED);
+        assertThat(response.candidateHospitals()).isEmpty();
     }
 
     @Test
@@ -94,6 +164,8 @@ class EmergencyRequestServiceTest {
         CreateEmergencyRequestRequest request = createRequest();
         given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
                 .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
+        given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
+                .willReturn(List.of());
 
         EmergencyRequestResponse response = emergencyRequestService.createEmergencyRequest(request);
 
@@ -132,6 +204,18 @@ class EmergencyRequestServiceTest {
         );
     }
 
+    private HospitalResponseDto hospitalResponse(Long hospitalId) {
+        return new HospitalResponseDto(
+                hospitalId,
+                "Seoul Emergency Hospital",
+                "123 Seoul-ro",
+                37.5665,
+                126.9780,
+                1.2,
+                true
+        );
+    }
+
     private EmergencyRequest emergencyRequestWithId(EmergencyRequest emergencyRequest, Long id) {
         LocalDateTime now = LocalDateTime.of(2026, 5, 10, 12, 0);
         ReflectionTestUtils.setField(emergencyRequest, "id", id);
@@ -139,5 +223,16 @@ class EmergencyRequestServiceTest {
         ReflectionTestUtils.setField(emergencyRequest, "updatedAt", now);
         ReflectionTestUtils.setField(emergencyRequest, "version", 0L);
         return emergencyRequest;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private ArgumentCaptor<Iterable<HospitalResponse>> hospitalResponseIterableCaptor() {
+        return ArgumentCaptor.forClass((Class) Iterable.class);
+    }
+
+    private List<HospitalResponse> toList(Iterable<HospitalResponse> hospitalResponses) {
+        List<HospitalResponse> result = new ArrayList<>();
+        hospitalResponses.forEach(result::add);
+        return result;
     }
 }

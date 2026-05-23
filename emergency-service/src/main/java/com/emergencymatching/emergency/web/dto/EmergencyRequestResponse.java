@@ -5,6 +5,7 @@ import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record EmergencyRequestResponse(
         Long id,
@@ -20,10 +21,18 @@ public record EmergencyRequestResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         LocalDateTime expiresAt,
-        Long version
+        Long version,
+        List<CandidateHospitalResponse> candidateHospitals
 ) {
 
     public static EmergencyRequestResponse from(EmergencyRequest emergencyRequest) {
+        return from(emergencyRequest, List.of());
+    }
+
+    public static EmergencyRequestResponse from(
+            EmergencyRequest emergencyRequest,
+            List<CandidateHospitalResponse> candidateHospitals
+    ) {
         return new EmergencyRequestResponse(
                 emergencyRequest.getId(),
                 emergencyRequest.getParamedicId(),
@@ -38,7 +47,8 @@ public record EmergencyRequestResponse(
                 emergencyRequest.getCreatedAt(),
                 emergencyRequest.getUpdatedAt(),
                 emergencyRequest.getExpiresAt(),
-                emergencyRequest.getVersion()
+                emergencyRequest.getVersion(),
+                candidateHospitals
         );
     }
 }

@@ -1,7 +1,6 @@
 package com.emergencymatching.emergency.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -16,7 +15,6 @@ import com.emergencymatching.emergency.domain.HospitalResponse;
 import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
-import com.emergencymatching.emergency.exception.HospitalClientException;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
@@ -147,16 +145,18 @@ class EmergencyRequestServiceTest {
     }
 
     @Test
-    void createEmergencyRequestThrowsExceptionWhenHospitalClientFails() {
+    void createEmergencyRequestKeepsRequestedStatusWhenHospitalClientFails() {
         CreateEmergencyRequestRequest request = createRequest();
         given(emergencyRequestRepository.save(any(EmergencyRequest.class)))
                 .willAnswer(invocation -> emergencyRequestWithId(invocation.getArgument(0), 1L));
         given(hospitalClient.getNearbyHospitals(37.5665, 126.9780, 5.0))
                 .willThrow(new RuntimeException("hospital-service unavailable"));
 
-        assertThatThrownBy(() -> emergencyRequestService.createEmergencyRequest(request))
-                .isInstanceOf(HospitalClientException.class)
-                .hasMessage("Failed to fetch nearby hospitals.");
+        EmergencyRequestResponse response = emergencyRequestService.createEmergencyRequest(request);
+
+        verify(hospitalResponseRepository, never()).saveAll(any());
+        assertThat(response.status()).isEqualTo(EmergencyRequestStatus.REQUESTED);
+        assertThat(response.candidateHospitals()).isEmpty();
     }
 
     @Test

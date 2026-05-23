@@ -4,7 +4,6 @@ import com.emergencymatching.emergency.client.HospitalClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.HospitalResponse;
-import com.emergencymatching.emergency.exception.HospitalClientException;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
@@ -77,7 +76,9 @@ public class EmergencyRequestService {
             // 후보 병원이 없으면 병원에 전파할 대상이 없으므로 REQUESTED 상태를 유지한다.
             return nearbyHospitals != null ? nearbyHospitals : List.of();
         } catch (Exception exception) {
-            throw new HospitalClientException("Failed to fetch nearby hospitals.", exception);
+            // hospital-service 장애가 있어도 응급 요청 기록은 보존한다.
+            // 후보 병원 조회 실패는 후보 없음과 동일하게 다루며 REQUESTED 상태를 유지한다.
+            return List.of();
         }
     }
 

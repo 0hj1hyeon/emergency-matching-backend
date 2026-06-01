@@ -12,6 +12,7 @@ import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
+import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import jakarta.validation.ConstraintViolation;
@@ -33,6 +34,9 @@ class EmergencyRequestServiceTest {
 
     @Mock
     private EmergencyRequestRepository emergencyRequestRepository;
+
+    @Mock
+    private HospitalResponseRepository hospitalResponseRepository;
 
     @Mock
     private HospitalServiceClient hospitalServiceClient;

@@ -3,8 +3,10 @@ package com.emergencymatching.emergency.service;
 import com.emergencymatching.emergency.client.HospitalServiceClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
+import com.emergencymatching.emergency.domain.HospitalResponse;
 import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
+import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -21,15 +23,18 @@ import java.util.List;
 public class EmergencyRequestService {
 
     private final EmergencyRequestRepository emergencyRequestRepository;
+    private final HospitalResponseRepository hospitalResponseRepository;
     private final HospitalServiceClient hospitalServiceClient;
     private final RabbitTemplate rabbitTemplate;
 
     public EmergencyRequestService(
             EmergencyRequestRepository emergencyRequestRepository,
+            HospitalResponseRepository hospitalResponseRepository,
             HospitalServiceClient hospitalServiceClient,
             RabbitTemplate rabbitTemplate
     ) {
         this.emergencyRequestRepository = emergencyRequestRepository;
+        this.hospitalResponseRepository = hospitalResponseRepository;
         this.hospitalServiceClient = hospitalServiceClient;
         this.rabbitTemplate = rabbitTemplate;
     }
@@ -65,6 +70,15 @@ public class EmergencyRequestService {
             }
         } catch (Exception e) {
             log.warn("Hospital Service 조회 실패 (장애 대체 복구 흐름 작동): {}", e.getMessage());
+        }
+
+        // 2-1. 후보 병원별로 PENDING 상태의 응답 레코드를 생성하여 DB에 저장
+        if (!hospitalIds.isEmpty()) {
+            for (Long hospitalId : hospitalIds) {
+                HospitalResponse pendingResponse = HospitalResponse.pending(savedRequest.getId(), hospitalId);
+                hospitalResponseRepository.save(pendingResponse);
+            }
+            log.info("응급 요청 ID {} 에 대한 후보 병원 {}개 응답 대기 레코드(PENDING) 생성 완료", savedRequest.getId(), hospitalIds.size());
         }
 
         // 3. 응급 요청 상태를 BROADCASTED(병원들로 알림 전송됨) 상태로 변경

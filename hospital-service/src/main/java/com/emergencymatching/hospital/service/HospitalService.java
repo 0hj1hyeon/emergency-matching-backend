@@ -5,6 +5,8 @@ import com.emergencymatching.hospital.exception.HospitalNotFoundException;
 import com.emergencymatching.hospital.repository.HospitalRepository;
 import com.emergencymatching.hospital.web.dto.CreateHospitalRequest;
 import com.emergencymatching.hospital.web.dto.HospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalSearchRequest;
 import com.emergencymatching.hospital.web.dto.UpdateHospitalAvailabilityRequest;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -43,6 +45,19 @@ public class HospitalService {
 
     public HospitalResponse getHospital(Long hospitalId) {
         return HospitalResponse.from(findHospital(hospitalId));
+    }
+
+    public List<NearbyHospitalResponse> getNearbyHospitals(NearbyHospitalSearchRequest request) {
+        Double radiusMeters = request.radiusKm() * 1000.0;
+
+        return hospitalRepository.findNearbyAvailableHospitals(
+                        request.lat(),
+                        request.lng(),
+                        radiusMeters
+                )
+                .stream()
+                .map(NearbyHospitalResponse::from)
+                .toList();
     }
 
     @Transactional

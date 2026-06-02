@@ -13,6 +13,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.emergencymatching.hospital.service.HospitalService;
 import com.emergencymatching.hospital.web.dto.CreateHospitalRequest;
 import com.emergencymatching.hospital.web.dto.HospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalSearchRequest;
 import com.emergencymatching.hospital.web.dto.UpdateHospitalAvailabilityRequest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -73,6 +75,34 @@ class HospitalControllerTest {
     }
 
     @Test
+    void getNearbyHospitalsReturnsOkResponse() throws Exception {
+        given(hospitalService.getNearbyHospitals(any(NearbyHospitalSearchRequest.class)))
+                .willReturn(List.of(nearbyHospitalResponse()));
+
+        mockMvc.perform(get("/api/hospitals/nearby")
+                        .param("lat", "37.5665")
+                        .param("lng", "126.9780")
+                        .param("radiusKm", "5.0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].hospitalId").value(1))
+                .andExpect(jsonPath("$[0].name").value("Seoul Emergency Hospital"))
+                .andExpect(jsonPath("$[0].address").value("123 Seoul-ro"))
+                .andExpect(jsonPath("$[0].latitude").value(37.5665))
+                .andExpect(jsonPath("$[0].longitude").value(126.9780))
+                .andExpect(jsonPath("$[0].distanceKm").value(1.2))
+                .andExpect(jsonPath("$[0].isAvailable").value(true));
+    }
+
+    @Test
+    void getNearbyHospitalsReturnsBadRequestForInvalidParams() throws Exception {
+        mockMvc.perform(get("/api/hospitals/nearby")
+                        .param("lat", "91.0")
+                        .param("lng", "181.0")
+                        .param("radiusKm", "0"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void getHospitalReturnsOkResponse() throws Exception {
         given(hospitalService.getHospital(1L)).willReturn(hospitalResponse(1L, true));
 
@@ -116,6 +146,18 @@ class HospitalControllerTest {
                 isAvailable,
                 timestamp,
                 timestamp
+        );
+    }
+
+    private NearbyHospitalResponse nearbyHospitalResponse() {
+        return new NearbyHospitalResponse(
+                1L,
+                "Seoul Emergency Hospital",
+                "123 Seoul-ro",
+                37.5665,
+                126.9780,
+                1.2,
+                true
         );
     }
 }

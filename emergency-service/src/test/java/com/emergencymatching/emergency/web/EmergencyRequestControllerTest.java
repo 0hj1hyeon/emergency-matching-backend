@@ -11,9 +11,11 @@ import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
 import com.emergencymatching.emergency.service.EmergencyRequestService;
+import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -53,9 +55,13 @@ class EmergencyRequestControllerTest {
                 .andExpect(header().string(HttpHeaders.LOCATION, "/api/emergency-requests/1"))
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.paramedicId").value(10))
-                .andExpect(jsonPath("$.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.status").value("BROADCASTED"))
                 .andExpect(jsonPath("$.severityLevel").value("CRITICAL"))
-                .andExpect(jsonPath("$.patientGender").value("MALE"));
+                .andExpect(jsonPath("$.patientGender").value("MALE"))
+                .andExpect(jsonPath("$.candidateHospitals[0].hospitalId").value(1))
+                .andExpect(jsonPath("$.candidateHospitals[0].name").value("Seoul Emergency Hospital"))
+                .andExpect(jsonPath("$.candidateHospitals[0].distanceKm").value(1.2))
+                .andExpect(jsonPath("$.candidateHospitals[0].isAvailable").value(true));
     }
 
     @Test
@@ -87,12 +93,21 @@ class EmergencyRequestControllerTest {
                 SeverityLevel.CRITICAL,
                 37.5665,
                 126.9780,
-                EmergencyRequestStatus.REQUESTED,
+                EmergencyRequestStatus.BROADCASTED,
                 null,
                 now,
                 now,
                 now.plusMinutes(10),
-                0L
+                0L,
+                List.of(new CandidateHospitalResponse(
+                        1L,
+                        "Seoul Emergency Hospital",
+                        "123 Seoul-ro",
+                        37.5665,
+                        126.9780,
+                        1.2,
+                        true
+                ))
         );
     }
 }

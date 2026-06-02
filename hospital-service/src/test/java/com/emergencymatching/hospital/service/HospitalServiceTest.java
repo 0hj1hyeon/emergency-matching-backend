@@ -3,14 +3,18 @@ package com.emergencymatching.hospital.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
 import com.emergencymatching.hospital.domain.Hospital;
 import com.emergencymatching.hospital.exception.HospitalNotFoundException;
+import com.emergencymatching.hospital.repository.NearbyHospitalProjection;
 import com.emergencymatching.hospital.repository.HospitalRepository;
 import com.emergencymatching.hospital.web.dto.CreateHospitalRequest;
 import com.emergencymatching.hospital.web.dto.HospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalResponse;
+import com.emergencymatching.hospital.web.dto.NearbyHospitalSearchRequest;
 import com.emergencymatching.hospital.web.dto.UpdateHospitalAvailabilityRequest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -145,6 +149,86 @@ class HospitalServiceTest {
         assertThat(hospital.getAvailable()).isFalse();
     }
 
+    @Test
+    void getNearbyHospitalsReturnsHospitalsWithinRadius() {
+        NearbyHospitalSearchRequest request = new NearbyHospitalSearchRequest(
+                37.5665,
+                126.9780,
+                5.0
+        );
+        given(hospitalRepository.findNearbyAvailableHospitals(37.5665, 126.9780, 5000.0))
+                .willReturn(List.of(
+                        nearbyHospital(1L, "Seoul Emergency Hospital", 1.2, true),
+                        nearbyHospital(2L, "Gangnam Emergency Hospital", 3.4, true)
+                ));
+
+        List<NearbyHospitalResponse> responses = hospitalService.getNearbyHospitals(request);
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses)
+                .extracting(NearbyHospitalResponse::hospitalId)
+                .containsExactly(1L, 2L);
+    }
+
+    @Test
+    void getNearbyHospitalsReturnsOnlyAvailableHospitals() {
+        NearbyHospitalSearchRequest request = new NearbyHospitalSearchRequest(
+                37.5665,
+                126.9780,
+                5.0
+        );
+        given(hospitalRepository.findNearbyAvailableHospitals(37.5665, 126.9780, 5000.0))
+                .willReturn(List.of(
+                        nearbyHospital(1L, "Seoul Emergency Hospital", 1.2, true),
+                        nearbyHospital(2L, "Gangnam Emergency Hospital", 3.4, true)
+                ));
+
+        List<NearbyHospitalResponse> responses = hospitalService.getNearbyHospitals(request);
+
+        assertThat(responses)
+                .extracting(NearbyHospitalResponse::isAvailable)
+                .containsOnly(true);
+    }
+
+    @Test
+    void getNearbyHospitalsPreservesDistanceOrder() {
+        NearbyHospitalSearchRequest request = new NearbyHospitalSearchRequest(
+                37.5665,
+                126.9780,
+                5.0
+        );
+        given(hospitalRepository.findNearbyAvailableHospitals(37.5665, 126.9780, 5000.0))
+                .willReturn(List.of(
+                        nearbyHospital(1L, "Seoul Emergency Hospital", 1.2, true),
+                        nearbyHospital(2L, "Gangnam Emergency Hospital", 3.4, true)
+                ));
+
+        List<NearbyHospitalResponse> responses = hospitalService.getNearbyHospitals(request);
+
+        assertThat(responses)
+                .extracting(NearbyHospitalResponse::distanceKm)
+                .containsExactly(1.2, 3.4);
+    }
+
+    @Test
+    void getNearbyHospitalsConvertsRadiusKmToMeters() {
+        NearbyHospitalSearchRequest request = new NearbyHospitalSearchRequest(
+                37.5665,
+                126.9780,
+                7.5
+        );
+        given(hospitalRepository.findNearbyAvailableHospitals(any(), any(), any()))
+                .willReturn(List.of());
+
+        hospitalService.getNearbyHospitals(request);
+
+        verify(hospitalRepository).findNearbyAvailableHospitals(
+                eq(37.5665),
+                eq(126.9780),
+                eq(7500.0)
+        );
+    }
+
     private Hospital hospital(
             Long id,
             Long memberId,
@@ -164,5 +248,68 @@ class HospitalServiceTest {
         ReflectionTestUtils.setField(hospital, "createdAt", now);
         ReflectionTestUtils.setField(hospital, "updatedAt", now);
         return hospital;
+    }
+
+    private NearbyHospitalProjection nearbyHospital(
+            Long hospitalId,
+            String name,
+            Double distanceKm,
+            Boolean isAvailable
+    ) {
+        return new TestNearbyHospitalProjection(
+                hospitalId,
+                name,
+                "123 Seoul-ro",
+                37.5665,
+                126.9780,
+                distanceKm,
+                isAvailable
+        );
+    }
+
+    private record TestNearbyHospitalProjection(
+            Long hospitalId,
+            String name,
+            String address,
+            Double latitude,
+            Double longitude,
+            Double distanceKm,
+            Boolean isAvailable
+    ) implements NearbyHospitalProjection {
+
+        @Override
+        public Long getHospitalId() {
+            return hospitalId;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String getAddress() {
+            return address;
+        }
+
+        @Override
+        public Double getLatitude() {
+            return latitude;
+        }
+
+        @Override
+        public Double getLongitude() {
+            return longitude;
+        }
+
+        @Override
+        public Double getDistanceKm() {
+            return distanceKm;
+        }
+
+        @Override
+        public Boolean getIsAvailable() {
+            return isAvailable;
+        }
     }
 }

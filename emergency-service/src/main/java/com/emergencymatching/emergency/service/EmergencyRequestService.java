@@ -1,6 +1,6 @@
 package com.emergencymatching.emergency.service;
 
-import com.emergencymatching.emergency.client.HospitalServiceClient;
+import com.emergencymatching.emergency.client.HospitalClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.HospitalResponse;
@@ -8,13 +8,13 @@ import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
+import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
 import java.util.List;
 
 @Slf4j
@@ -22,26 +22,27 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class EmergencyRequestService {
 
+    private static final double DEFAULT_NEARBY_HOSPITAL_RADIUS_KM = 5.0;
+
     private final EmergencyRequestRepository emergencyRequestRepository;
     private final HospitalResponseRepository hospitalResponseRepository;
-    private final HospitalServiceClient hospitalServiceClient;
+    private final HospitalClient hospitalClient;
     private final RabbitTemplate rabbitTemplate;
 
     public EmergencyRequestService(
             EmergencyRequestRepository emergencyRequestRepository,
             HospitalResponseRepository hospitalResponseRepository,
-            HospitalServiceClient hospitalServiceClient,
+            HospitalClient hospitalClient,
             RabbitTemplate rabbitTemplate
     ) {
         this.emergencyRequestRepository = emergencyRequestRepository;
         this.hospitalResponseRepository = hospitalResponseRepository;
-        this.hospitalServiceClient = hospitalServiceClient;
+        this.hospitalClient = hospitalClient;
         this.rabbitTemplate = rabbitTemplate;
     }
 
     @Transactional
     public EmergencyRequestResponse createEmergencyRequest(CreateEmergencyRequestRequest request) {
-        // 1. 구급요청 생성 및 일차 저장
         EmergencyRequest emergencyRequest = EmergencyRequest.create(
                 request.paramedicId(),
                 request.patientCondition(),
@@ -54,54 +55,67 @@ public class EmergencyRequestService {
 
         EmergencyRequest savedRequest = emergencyRequestRepository.save(emergencyRequest);
 
-        // 2. Feign Client로 근처 병원 목록 조회 (검색 반경 기본값: 5.0km)
-        // 병원 서비스 장애 시에도 응급 요청 저장은 성공할 수 있도록 예외처리(장애 복원성)
-        List<Long> hospitalIds = Collections.emptyList();
-        try {
-            List<HospitalResponseDto> nearbyHospitals = hospitalServiceClient.getNearbyHospitals(
+        List<HospitalResponseDto> nearbyHospitals = getNearbyHospitals(savedRequest);
+
+        List<Long> hospitalIds = List.of();
+        if (!nearbyHospitals.isEmpty()) {
+            List<HospitalResponse> hospitalResponses = nearbyHospitals.stream()
+                    .map(hospital -> HospitalResponse.pending(savedRequest.getId(), hospital.hospitalId()))
+                    .toList();
+
+            hospitalResponseRepository.saveAll(hospitalResponses);
+            savedRequest.broadcast();
+
+            hospitalIds = nearbyHospitals.stream()
+                    .map(HospitalResponseDto::hospitalId)
+                    .toList();
+        }
+
+        List<CandidateHospitalResponse> candidateHospitals = nearbyHospitals.stream()
+                .map(CandidateHospitalResponse::from)
+                .toList();
+
+        // 3. RabbitMQ로 이벤트 발행 (상태가 BROADCASTED일 경우에만 이벤트 발행)
+        if (savedRequest.getStatus() == com.emergencymatching.emergency.domain.EmergencyRequestStatus.BROADCASTED) {
+            EmergencyRequestCreatedEvent event = new EmergencyRequestCreatedEvent(
+                    savedRequest.getId(),
+                    savedRequest.getParamedicId(),
+                    hospitalIds,
+                    savedRequest.getPatientCondition(),
+                    savedRequest.getPatientGender().name(),
+                    savedRequest.getPatientAgeGroup(),
+                    savedRequest.getSeverityLevel().name(),
                     savedRequest.getLatitude(),
                     savedRequest.getLongitude(),
-                    5.0
+                    savedRequest.getCreatedAt() != null ? savedRequest.getCreatedAt() : java.time.LocalDateTime.now()
             );
-            if (nearbyHospitals != null) {
-                hospitalIds = nearbyHospitals.stream()
-                        .map(HospitalResponseDto::hospitalId)
-                        .toList();
-            }
-        } catch (Exception e) {
-            log.warn("Hospital Service 조회 실패 (장애 대체 복구 흐름 작동): {}", e.getMessage());
+
+            rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
+            log.info("응급 요청 생성 실시간 알림 비동기 이벤트 발행 완료 ➔ ID: {}, 전송 대상 병원 수: {}", savedRequest.getId(), hospitalIds.size());
         }
 
-        // 2-1. 후보 병원별로 PENDING 상태의 응답 레코드를 생성하여 DB에 저장
-        if (!hospitalIds.isEmpty()) {
-            for (Long hospitalId : hospitalIds) {
-                HospitalResponse pendingResponse = HospitalResponse.pending(savedRequest.getId(), hospitalId);
-                hospitalResponseRepository.save(pendingResponse);
-            }
-            log.info("응급 요청 ID {} 에 대한 후보 병원 {}개 응답 대기 레코드(PENDING) 생성 완료", savedRequest.getId(), hospitalIds.size());
+        return EmergencyRequestResponse.from(savedRequest, candidateHospitals);
+    }
+
+    private List<HospitalResponseDto> getNearbyHospitals(EmergencyRequest emergencyRequest) {
+        try {
+            List<HospitalResponseDto> nearbyHospitals = hospitalClient.getNearbyHospitals(
+                    emergencyRequest.getLatitude(),
+                    emergencyRequest.getLongitude(),
+                    resolveNearbyHospitalRadiusKm(emergencyRequest)
+            );
+
+            // 후보 병원이 없으면 병원에 전파할 대상이 없으므로 REQUESTED 상태를 유지한다.
+            return nearbyHospitals != null ? nearbyHospitals : List.of();
+        } catch (Exception exception) {
+            // hospital-service 장애가 있어도 응급 요청 기록은 보존한다.
+            // 후보 병원 조회 실패는 후보 없음과 동일하게 다루며 REQUESTED 상태를 유지한다.
+            log.warn("Hospital Service 조회 실패 (Fallback 흐름 작동): {}", exception.getMessage());
+            return List.of();
         }
+    }
 
-        // 3. 응급 요청 상태를 BROADCASTED(병원들로 알림 전송됨) 상태로 변경
-        // @Transactional 내부이므로 객체의 상태 필드를 변경하면 더티 체킹에 의해 DB에 자동 반영됩니다.
-        savedRequest.broadcast();
-
-        // 4. RabbitMQ로 이벤트 발행 (JSON 직렬화 및 비동기 전송)
-        EmergencyRequestCreatedEvent event = new EmergencyRequestCreatedEvent(
-                savedRequest.getId(),
-                savedRequest.getParamedicId(),
-                hospitalIds,
-                savedRequest.getPatientCondition(),
-                savedRequest.getPatientGender().name(),
-                savedRequest.getPatientAgeGroup(),
-                savedRequest.getSeverityLevel().name(),
-                savedRequest.getLatitude(),
-                savedRequest.getLongitude(),
-                savedRequest.getCreatedAt() != null ? savedRequest.getCreatedAt() : java.time.LocalDateTime.now()
-        );
-
-        rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
-        log.info("응급 요청 생성 비동기 이벤트 발행 완료 - ID: {}, 전송된 후보 병원 수: {}", savedRequest.getId(), hospitalIds.size());
-
-        return EmergencyRequestResponse.from(savedRequest);
+    private Double resolveNearbyHospitalRadiusKm(EmergencyRequest emergencyRequest) {
+        return DEFAULT_NEARBY_HOSPITAL_RADIUS_KM;
     }
 }

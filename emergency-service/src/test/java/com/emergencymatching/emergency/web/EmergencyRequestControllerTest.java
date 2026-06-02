@@ -2,6 +2,7 @@ package com.emergencymatching.emergency.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -111,6 +112,45 @@ class EmergencyRequestControllerTest {
                 .andExpect(jsonPath("$[0].latitude").value(37.5665))
                 .andExpect(jsonPath("$[0].longitude").value(126.9780))
                 .andExpect(jsonPath("$[0].status").value("BROADCASTED"));
+    }
+
+    @Test
+    void acceptEndpointReturnsOk() throws Exception {
+        long requestId = 1L;
+        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", requestId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 10}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectEndpointReturnsOk() throws Exception {
+        long requestId = 1L;
+        mockMvc.perform(post("/api/emergency-requests/{requestId}/reject", requestId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 10}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void acceptEndpointReturnsBadRequestForInvalidBody() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void genericExceptionReturnsSafeErrorMessage() throws Exception {
+        willThrow(new RuntimeException("internal secret"))
+                .given(emergencyRequestService)
+                .acceptEmergencyRequest(1L, 10L);
+
+        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 10}"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error").value("서버 내부 오류가 발생했습니다."));
     }
 
     private EmergencyRequestResponse emergencyRequestResponse() {

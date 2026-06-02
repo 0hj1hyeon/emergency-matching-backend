@@ -4,6 +4,7 @@ import com.emergencymatching.emergency.client.HospitalClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.HospitalResponse;
+import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
 import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
@@ -11,12 +12,12 @@ import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
+import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 @Slf4j
 @Service
@@ -108,6 +109,25 @@ public class EmergencyRequestService {
         }
 
         return EmergencyRequestResponse.from(savedRequest, candidateHospitals);
+    }
+
+    public List<PendingEmergencyRequestResponse> getPendingRequestsByHospital(Long hospitalId) {
+        List<Long> emergencyRequestIds = hospitalResponseRepository.findAllByHospitalIdAndStatus(
+                        hospitalId,
+                        HospitalResponseStatus.PENDING
+                )
+                .stream()
+                .map(HospitalResponse::getEmergencyRequestId)
+                .toList();
+
+        if (emergencyRequestIds.isEmpty()) {
+            return List.of();
+        }
+
+        return emergencyRequestRepository.findAllByIdIn(emergencyRequestIds)
+                .stream()
+                .map(PendingEmergencyRequestResponse::from)
+                .toList();
     }
 
     private List<HospitalResponseDto> getNearbyHospitals(EmergencyRequest emergencyRequest) {

@@ -1,6 +1,7 @@
 package com.emergencymatching.emergency.repository;
 
 import com.emergencymatching.emergency.domain.HospitalResponse;
+import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -21,4 +22,12 @@ public interface HospitalResponseRepository extends JpaRepository<HospitalRespon
      * (매칭 완료 시, 다른 후보 병원군을 대상으로 '마감 알림'을 전파하기 위해 사용됩니다.)
      */
     List<HospitalResponse> findByEmergencyRequestId(Long emergencyRequestId);
+
+    /**
+     * 특정 병원 ID와 상태를 기반으로 매칭 대기 중인 응답 목록을 조회합니다.
+     */
+    List<HospitalResponse> findAllByHospitalIdAndStatus(
+            Long hospitalId,
+            HospitalResponseStatus status
+    );
 }

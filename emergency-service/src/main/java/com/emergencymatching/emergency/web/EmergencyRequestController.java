@@ -3,9 +3,12 @@ package com.emergencymatching.emergency.web;
 import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
+import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -49,5 +52,12 @@ public class EmergencyRequestController {
     ) {
         emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/hospitals/{hospitalId}/pending")
+    public ResponseEntity<List<PendingEmergencyRequestResponse>> getPendingRequestsByHospital(
+            @PathVariable Long hospitalId
+    ) {
+        return ResponseEntity.ok(emergencyRequestService.getPendingRequestsByHospital(hospitalId));
     }
 }

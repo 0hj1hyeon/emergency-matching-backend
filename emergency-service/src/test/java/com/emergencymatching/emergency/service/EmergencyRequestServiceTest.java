@@ -20,6 +20,7 @@ import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
+import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -290,6 +291,63 @@ class EmergencyRequestServiceTest {
         assertThat(hospitalResponse.getRespondedAt()).isNotNull();
     }
 
+    @Test
+    void getPendingRequestsByHospitalReturnsOnlyPendingRequestsForHospital() {
+        given(hospitalResponseRepository.findAllByHospitalIdAndStatus(100L, HospitalResponseStatus.PENDING))
+                .willReturn(List.of(
+                        hospitalResponseEntity(1L, 100L),
+                        hospitalResponseEntity(2L, 100L)
+                ));
+        given(emergencyRequestRepository.findAllByIdIn(List.of(1L, 2L)))
+                .willReturn(List.of(
+                        emergencyRequest(1L, "Chest pain and shortness of breath"),
+                        emergencyRequest(2L, "Severe abdominal pain")
+                ));
+
+        List<PendingEmergencyRequestResponse> responses =
+                emergencyRequestService.getPendingRequestsByHospital(100L);
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses)
+                .extracting(PendingEmergencyRequestResponse::requestId)
+                .containsExactly(1L, 2L);
+        verify(hospitalResponseRepository).findAllByHospitalIdAndStatus(
+                100L,
+                HospitalResponseStatus.PENDING
+        );
+    }
+
+    @Test
+    void getPendingRequestsByHospitalExcludesAcceptedAndRejectedResponses() {
+        given(hospitalResponseRepository.findAllByHospitalIdAndStatus(100L, HospitalResponseStatus.PENDING))
+                .willReturn(List.of(hospitalResponseEntity(1L, 100L)));
+        given(emergencyRequestRepository.findAllByIdIn(List.of(1L)))
+                .willReturn(List.of(emergencyRequest(1L, "Chest pain and shortness of breath")));
+
+        List<PendingEmergencyRequestResponse> responses =
+                emergencyRequestService.getPendingRequestsByHospital(100L);
+
+        assertThat(responses)
+                .extracting(PendingEmergencyRequestResponse::requestId)
+                .containsExactly(1L);
+        verify(hospitalResponseRepository).findAllByHospitalIdAndStatus(
+                100L,
+                HospitalResponseStatus.PENDING
+        );
+    }
+
+    @Test
+    void getPendingRequestsByHospitalReturnsEmptyListWhenRequestsDoNotExist() {
+        given(hospitalResponseRepository.findAllByHospitalIdAndStatus(100L, HospitalResponseStatus.PENDING))
+                .willReturn(List.of());
+
+        List<PendingEmergencyRequestResponse> responses =
+                emergencyRequestService.getPendingRequestsByHospital(100L);
+
+        assertThat(responses).isEmpty();
+        verify(emergencyRequestRepository, never()).findAllByIdIn(any());
+    }
+
     private CreateEmergencyRequestRequest createRequest() {
         return new CreateEmergencyRequestRequest(
                 10L,
@@ -321,6 +379,31 @@ class EmergencyRequestServiceTest {
         ReflectionTestUtils.setField(emergencyRequest, "updatedAt", now);
         ReflectionTestUtils.setField(emergencyRequest, "version", 0L);
         return emergencyRequest;
+    }
+
+    private EmergencyRequest emergencyRequest(Long id, String patientCondition) {
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L,
+                patientCondition,
+                PatientGender.MALE,
+                "60s",
+                SeverityLevel.CRITICAL,
+                37.5665,
+                126.9780
+        );
+        emergencyRequest.broadcast();
+        return emergencyRequestWithId(emergencyRequest, id);
+    }
+
+    private HospitalResponse hospitalResponseEntity(Long emergencyRequestId, Long hospitalId) {
+        HospitalResponse hospitalResponse = HospitalResponse.pending(emergencyRequestId, hospitalId);
+        ReflectionTestUtils.setField(hospitalResponse, "id", emergencyRequestId);
+        ReflectionTestUtils.setField(
+                hospitalResponse,
+                "createdAt",
+                LocalDateTime.of(2026, 5, 10, 12, 0)
+        );
+        return hospitalResponse;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

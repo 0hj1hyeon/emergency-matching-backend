@@ -113,6 +113,32 @@ class EmergencyRequestControllerTest {
                 .andExpect(jsonPath("$[0].status").value("BROADCASTED"));
     }
 
+        @Test
+        void acceptEndpointReturnsOk() throws Exception {
+                long requestId = 1L;
+                mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", requestId)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"hospitalId\": 10}"))
+                                .andExpect(status().isOk());
+        }
+
+        @Test
+        void rejectEndpointReturnsOk() throws Exception {
+                long requestId = 1L;
+                mockMvc.perform(post("/api/emergency-requests/{requestId}/reject", requestId)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"hospitalId\": 10}"))
+                                .andExpect(status().isOk());
+        }
+
+        @Test
+        void acceptEndpointReturnsBadRequestForInvalidBody() throws Exception {
+                mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", 1L)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{}"))
+                                .andExpect(status().isBadRequest());
+        }
+
     private EmergencyRequestResponse emergencyRequestResponse() {
         LocalDateTime now = LocalDateTime.of(2026, 5, 10, 12, 0);
         return new EmergencyRequestResponse(

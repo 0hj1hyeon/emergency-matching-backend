@@ -114,6 +114,14 @@ public class EmergencyRequest {
         this.status = EmergencyRequestStatus.BROADCASTED;
     }
 
+    public void accept(Long hospitalId) {
+        if (this.status != EmergencyRequestStatus.BROADCASTED) {
+            throw new IllegalStateException("전송 완료(BROADCASTED) 상태의 요청만 수락할 수 있습니다.");
+        }
+        this.status = EmergencyRequestStatus.ACCEPTED;
+        this.acceptedHospitalId = hospitalId;
+    }
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();

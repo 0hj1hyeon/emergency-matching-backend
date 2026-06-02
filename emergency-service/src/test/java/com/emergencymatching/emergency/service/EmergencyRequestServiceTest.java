@@ -203,6 +203,59 @@ class EmergencyRequestServiceTest {
         assertThat(violations).hasSize(7);
     }
 
+    @Test
+    void acceptEmergencyRequestSucceeds() {
+        // given
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L, "Chest pain", PatientGender.MALE, "60s", SeverityLevel.CRITICAL, 37.5665, 126.9780
+        );
+        ReflectionTestUtils.setField(emergencyRequest, "id", requestId);
+        emergencyRequest.broadcast(); // change status to BROADCASTED so it can be accepted
+        
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+        
+        given(emergencyRequestRepository.findById(requestId)).willReturn(java.util.Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(java.util.Optional.of(hospitalResponse));
+        given(hospitalResponseRepository.findByEmergencyRequestId(requestId))
+                .willReturn(List.of(hospitalResponse));
+        
+        // when
+        emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId);
+        
+        // then
+        assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.ACCEPTED);
+        assertThat(emergencyRequest.getAcceptedHospitalId()).isEqualTo(hospitalId);
+        assertThat(hospitalResponse.getStatus()).isEqualTo(HospitalResponseStatus.ACCEPTED);
+        
+        verify(rabbitTemplate).convertAndSend(
+                eq("emergency.exchange"),
+                eq("emergency.request.accepted"),
+                any(com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent.class)
+        );
+    }
+
+    @Test
+    void rejectEmergencyRequestSucceeds() {
+        // given
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+        
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(java.util.Optional.of(hospitalResponse));
+        
+        // when
+        emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId);
+        
+        // then
+        assertThat(hospitalResponse.getStatus()).isEqualTo(HospitalResponseStatus.REJECTED);
+        assertThat(hospitalResponse.getRespondedAt()).isNotNull();
+    }
+
     private CreateEmergencyRequestRequest createRequest() {
         return new CreateEmergencyRequestRequest(
                 10L,

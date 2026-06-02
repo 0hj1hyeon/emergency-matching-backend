@@ -30,4 +30,22 @@ public class EmergencyRequestController {
         return ResponseEntity.created(URI.create("/api/emergency-requests/" + response.id()))
                 .body(response);
     }
+
+    @PostMapping("/{requestId}/accept")
+    public ResponseEntity<Void> acceptEmergencyRequest(
+            @org.springframework.web.bind.annotation.PathVariable("requestId") Long requestId,
+            @org.springframework.web.bind.annotation.RequestParam("hospitalId") Long hospitalId
+    ) {
+        emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{requestId}/reject")
+    public ResponseEntity<Void> rejectEmergencyRequest(
+            @org.springframework.web.bind.annotation.PathVariable("requestId") Long requestId,
+            @org.springframework.web.bind.annotation.RequestParam("hospitalId") Long hospitalId
+    ) {
+        emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId);
+        return ResponseEntity.ok().build();
+    }
 }

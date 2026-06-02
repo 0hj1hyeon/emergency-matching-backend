@@ -5,6 +5,7 @@ import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.HospitalResponse;
 import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
+import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
@@ -117,5 +118,50 @@ public class EmergencyRequestService {
 
     private Double resolveNearbyHospitalRadiusKm(EmergencyRequest emergencyRequest) {
         return DEFAULT_NEARBY_HOSPITAL_RADIUS_KM;
+    }
+
+    @Transactional
+    public void acceptEmergencyRequest(Long requestId, Long hospitalId) {
+        // 1. 요청 조회
+        EmergencyRequest emergencyRequest = emergencyRequestRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 응급 요청을 찾을 수 없습니다. ID: " + requestId));
+
+        // 2. HospitalResponse 조회
+        HospitalResponse hospitalResponse = hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 후보 병원의 대기표를 찾을 수 없습니다. 병원 ID: " + hospitalId));
+
+        // 3. 상태 변경 및 수락 처리
+        hospitalResponse.accept();
+        emergencyRequest.accept(hospitalId);
+
+        // 4. 원래 포진했던 다른 후보 병원들 ID 목록을 구해서 알림 전파용으로 넘겨줌
+        List<HospitalResponse> allResponses = hospitalResponseRepository.findByEmergencyRequestId(requestId);
+        List<Long> hospitalIds = allResponses.stream()
+                .map(HospitalResponse::getHospitalId)
+                .toList();
+
+        // 5. RabbitMQ로 수락 완료 비동기 이벤트 발행
+        EmergencyRequestAcceptedEvent event = new EmergencyRequestAcceptedEvent(
+                emergencyRequest.getId(),
+                hospitalId,
+                emergencyRequest.getParamedicId(),
+                hospitalIds,
+                emergencyRequest.getStatus().name(),
+                java.time.LocalDateTime.now()
+        );
+
+        rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.accepted", event);
+        log.info("응급 요청 수락 완료 비동기 이벤트 발행 완료 ➔ 요청 ID: {}, 수락 병원 ID: {}, 대상 병원 수: {}", requestId, hospitalId, hospitalIds.size());
+    }
+
+    @Transactional
+    public void rejectEmergencyRequest(Long requestId, Long hospitalId) {
+        // 1. HospitalResponse 조회
+        HospitalResponse hospitalResponse = hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 후보 병원의 대기표를 찾을 수 없습니다. 병원 ID: " + hospitalId));
+
+        // 2. 거절 처리
+        hospitalResponse.reject();
+        log.info("응급 요청 거절 완료 ➔ 요청 ID: {}, 거절 병원 ID: {}", requestId, hospitalId);
     }
 }

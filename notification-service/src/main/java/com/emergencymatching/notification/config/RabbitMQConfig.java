@@ -21,8 +21,14 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     public static final String EXCHANGE_NAME = "emergency.exchange";
+    
+    // 응급 요청 생성 이벤트 관련 설정
     public static final String QUEUE_NAME = "emergency.request.queue";
     public static final String ROUTING_KEY = "emergency.request.created";
+
+    // 응급 요청 수락 완료 이벤트 관련 설정
+    public static final String QUEUE_ACCEPTED_NAME = "emergency.accepted.queue";
+    public static final String ROUTING_KEY_ACCEPTED = "emergency.request.accepted";
 
     @Bean
     public TopicExchange emergencyExchange() {
@@ -39,6 +45,18 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(emergencyRequestQueue)
                 .to(emergencyExchange)
                 .with(ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue emergencyAcceptedQueue() {
+        return new Queue(QUEUE_ACCEPTED_NAME, true);
+    }
+
+    @Bean
+    public Binding bindingAccepted(Queue emergencyAcceptedQueue, TopicExchange emergencyExchange) {
+        return BindingBuilder.bind(emergencyAcceptedQueue)
+                .to(emergencyExchange)
+                .with(ROUTING_KEY_ACCEPTED);
     }
 
     /**

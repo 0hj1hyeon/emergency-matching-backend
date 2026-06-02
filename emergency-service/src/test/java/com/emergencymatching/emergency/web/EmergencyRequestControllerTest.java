@@ -2,6 +2,7 @@ package com.emergencymatching.emergency.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,6 +15,7 @@ import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
+import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -80,6 +82,35 @@ class EmergencyRequestControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getPendingRequestsByHospitalReturnsOkResponse() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 10, 12, 0);
+        given(emergencyRequestService.getPendingRequestsByHospital(100L))
+                .willReturn(List.of(new PendingEmergencyRequestResponse(
+                        1L,
+                        "Chest pain and shortness of breath",
+                        PatientGender.MALE,
+                        "60s",
+                        SeverityLevel.CRITICAL,
+                        37.5665,
+                        126.9780,
+                        EmergencyRequestStatus.BROADCASTED,
+                        now,
+                        now.plusMinutes(10)
+                )));
+
+        mockMvc.perform(get("/api/emergency-requests/hospitals/{hospitalId}/pending", 100L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].requestId").value(1))
+                .andExpect(jsonPath("$[0].patientCondition").value("Chest pain and shortness of breath"))
+                .andExpect(jsonPath("$[0].patientGender").value("MALE"))
+                .andExpect(jsonPath("$[0].patientAgeGroup").value("60s"))
+                .andExpect(jsonPath("$[0].severityLevel").value("CRITICAL"))
+                .andExpect(jsonPath("$[0].latitude").value(37.5665))
+                .andExpect(jsonPath("$[0].longitude").value(126.9780))
+                .andExpect(jsonPath("$[0].status").value("BROADCASTED"));
     }
 
     private EmergencyRequestResponse emergencyRequestResponse() {

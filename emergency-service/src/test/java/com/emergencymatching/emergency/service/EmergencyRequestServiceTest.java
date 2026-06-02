@@ -1,6 +1,7 @@
 package com.emergencymatching.emergency.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -234,6 +235,39 @@ class EmergencyRequestServiceTest {
         verify(rabbitTemplate).convertAndSend(
                 eq("emergency.exchange"),
                 eq("emergency.request.accepted"),
+                any(com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent.class)
+        );
+    }
+
+    @Test
+    void acceptEmergencyRequestFailsWhenExpired() {
+        // given
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L, "Chest pain", PatientGender.MALE, "60s", SeverityLevel.CRITICAL, 37.5665, 126.9780
+        );
+        ReflectionTestUtils.setField(emergencyRequest, "id", requestId);
+        ReflectionTestUtils.setField(emergencyRequest, "expiresAt", LocalDateTime.now().minusSeconds(1));
+        emergencyRequest.broadcast(); // change status to BROADCASTED so it can be accepted
+        
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+        
+        given(emergencyRequestRepository.findById(requestId)).willReturn(java.util.Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(java.util.Optional.of(hospitalResponse));
+        
+        // when & then
+        assertThatThrownBy(() -> 
+                emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId)
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("만료된 요청은 수락할 수 없습니다.");
+        
+        verify(rabbitTemplate, never()).convertAndSend(
+                any(String.class),
+                any(String.class),
                 any(com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent.class)
         );
     }

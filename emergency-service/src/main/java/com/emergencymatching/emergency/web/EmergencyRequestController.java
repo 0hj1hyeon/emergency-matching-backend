@@ -6,9 +6,11 @@ import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,8 +35,8 @@ public class EmergencyRequestController {
 
     @PostMapping("/{requestId}/accept")
     public ResponseEntity<Void> acceptEmergencyRequest(
-            @org.springframework.web.bind.annotation.PathVariable("requestId") Long requestId,
-            @org.springframework.web.bind.annotation.RequestParam("hospitalId") Long hospitalId
+            @PathVariable("requestId") Long requestId,
+            @RequestParam("hospitalId") Long hospitalId
     ) {
         emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId);
         return ResponseEntity.ok().build();
@@ -42,8 +44,8 @@ public class EmergencyRequestController {
 
     @PostMapping("/{requestId}/reject")
     public ResponseEntity<Void> rejectEmergencyRequest(
-            @org.springframework.web.bind.annotation.PathVariable("requestId") Long requestId,
-            @org.springframework.web.bind.annotation.RequestParam("hospitalId") Long hospitalId
+            @PathVariable("requestId") Long requestId,
+            @RequestParam("hospitalId") Long hospitalId
     ) {
         emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId);
         return ResponseEntity.ok().build();

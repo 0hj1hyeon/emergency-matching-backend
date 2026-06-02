@@ -91,8 +91,20 @@ public class EmergencyRequestService {
                     savedRequest.getCreatedAt() != null ? savedRequest.getCreatedAt() : java.time.LocalDateTime.now()
             );
 
-            rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
-            log.info("응급 요청 생성 실시간 알림 비동기 이벤트 발행 완료 ➔ ID: {}, 전송 대상 병원 수: {}", savedRequest.getId(), hospitalIds.size());
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
+                            }
+                        }
+                );
+                log.info("응급 요청 생성 실시간 알림 비동기 이벤트 발행 예약 (트랜잭션 커밋 후 전송 예정) ➔ ID: {}, 전송 대상 병원 수: {}", savedRequest.getId(), hospitalIds.size());
+            } else {
+                rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
+                log.info("응급 요청 생성 실시간 알림 비동기 이벤트 즉시 발행 (트랜잭션 비활성화 상태) ➔ ID: {}, 전송 대상 병원 수: {}", savedRequest.getId(), hospitalIds.size());
+            }
         }
 
         return EmergencyRequestResponse.from(savedRequest, candidateHospitals);
@@ -134,10 +146,11 @@ public class EmergencyRequestService {
         hospitalResponse.accept();
         emergencyRequest.accept(hospitalId);
 
-        // 4. 원래 포진했던 다른 후보 병원들 ID 목록을 구해서 알림 전파용으로 넘겨줌
+        // 4. 수락한 병원을 제외한 나머지 후보 병원들 ID 목록을 구해서 알림 마감(CLOSED) 전파용으로 넘겨줌
         List<HospitalResponse> allResponses = hospitalResponseRepository.findByEmergencyRequestId(requestId);
         List<Long> hospitalIds = allResponses.stream()
                 .map(HospitalResponse::getHospitalId)
+                .filter(id -> !id.equals(hospitalId))
                 .toList();
 
         // 5. RabbitMQ로 수락 완료 비동기 이벤트 발행
@@ -150,8 +163,20 @@ public class EmergencyRequestService {
                 java.time.LocalDateTime.now()
         );
 
-        rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.accepted", event);
-        log.info("응급 요청 수락 완료 비동기 이벤트 발행 완료 ➔ 요청 ID: {}, 수락 병원 ID: {}, 대상 병원 수: {}", requestId, hospitalId, hospitalIds.size());
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.accepted", event);
+                        }
+                    }
+            );
+            log.info("응급 요청 수락 완료 비동기 이벤트 발행 예약 (트랜잭션 커밋 후 전송 예정) ➔ 요청 ID: {}, 수락 병원 ID: {}", requestId, hospitalId);
+        } else {
+            rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.accepted", event);
+            log.info("응급 요청 수락 완료 비동기 이벤트 즉시 발행 (트랜잭션 비활성화 상태) ➔ 요청 ID: {}, 수락 병원 ID: {}", requestId, hospitalId);
+        }
     }
 
     @Transactional

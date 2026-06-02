@@ -2,6 +2,8 @@ package com.emergencymatching.notification.consumer;
 
 import com.emergencymatching.notification.config.RabbitMQConfig;
 import com.emergencymatching.notification.event.EmergencyRequestCreatedEvent;
+import com.emergencymatching.notification.event.EmergencyRequestAcceptedEvent;
+import com.emergencymatching.notification.event.HospitalRequestStatusUpdate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -54,6 +56,42 @@ public class RabbitMQConsumer {
             }
         } else {
             log.warn("알림 대상 병원이 지정되지 않아 WebSocket Push가 스킵되었습니다. (요청 ID: {})", event.requestId());
+        }
+    }
+
+    /**
+     * "emergency.accepted.queue" 우체통에 도착한 응급 환자 수락 완료 편지를 수신하여 로그를 기록하고,
+     * 매칭이 성사된 구급대원 채널 및 후보 병원 전체 채널로 실시간 매칭 상태 및 마감 전파를 보냅니다.
+     * 
+     * @param event 응급 이송 요청 수락 이벤트 정보
+     */
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_ACCEPTED_NAME)
+    public void consumeEmergencyRequestAccepted(EmergencyRequestAcceptedEvent event) {
+        log.info("========================================= [RabbitMQ 수신] =========================================");
+        log.info("응급 환자 이송 요청 수락(매칭 성사) 이벤트를 수신했습니다!");
+        log.info(" - 요청 ID: {}", event.requestId());
+        log.info(" - 수락 병원 ID: {}", event.hospitalId());
+        log.info(" - 구급대원 ID: {}", event.paramedicId());
+        log.info(" - 수락 시각: {}", event.acceptedAt());
+        log.info(" - 원본 알림 병원 수: {}", event.hospitalIds() != null ? event.hospitalIds().size() : 0);
+        log.info("===================================================================================================");
+
+        // 1. 대원용 채널로 실시간 매칭 성공 Push
+        String paramedicDestination = "/topic/emergency/" + event.requestId() + "/status";
+        messagingTemplate.convertAndSend(paramedicDestination, event);
+        log.info("[WebSocket Push] 대원 채널로 매칭 완료 전송 완료 ➔ {}", paramedicDestination);
+
+        // 2. 다른 모든 후보 병원 채널로 마감(CLOSED) Push
+        if (event.hospitalIds() != null && !event.hospitalIds().isEmpty()) {
+            HospitalRequestStatusUpdate statusUpdate = new HospitalRequestStatusUpdate(
+                    event.requestId(),
+                    "CLOSED"
+            );
+            for (Long hospitalId : event.hospitalIds()) {
+                String hospitalDestination = "/topic/hospitals/" + hospitalId + "/requests";
+                messagingTemplate.convertAndSend(hospitalDestination, statusUpdate);
+                log.info("[WebSocket Push] 병원 ID {} 의 채널로 요청 마감(CLOSED) 전송 완료 ➔ {}", hospitalId, hospitalDestination);
+            }
         }
     }
 }

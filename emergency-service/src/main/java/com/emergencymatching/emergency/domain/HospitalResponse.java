@@ -47,6 +47,22 @@ public class HospitalResponse {
         return new HospitalResponse(emergencyRequestId, hospitalId);
     }
 
+    public void accept() {
+        if (this.status != HospitalResponseStatus.PENDING) {
+            throw new IllegalStateException("대기 상태(PENDING)의 병원 응답만 수락할 수 있습니다.");
+        }
+        this.status = HospitalResponseStatus.ACCEPTED;
+        this.respondedAt = LocalDateTime.now();
+    }
+
+    public void reject() {
+        if (this.status != HospitalResponseStatus.PENDING) {
+            throw new IllegalStateException("대기 상태(PENDING)의 병원 응답만 거절할 수 있습니다.");
+        }
+        this.status = HospitalResponseStatus.REJECTED;
+        this.respondedAt = LocalDateTime.now();
+    }
+
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();

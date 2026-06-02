@@ -4,15 +4,20 @@ import com.emergencymatching.emergency.client.HospitalClient;
 import com.emergencymatching.emergency.client.dto.HospitalResponseDto;
 import com.emergencymatching.emergency.domain.EmergencyRequest;
 import com.emergencymatching.emergency.domain.HospitalResponse;
+import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
-import java.util.List;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class EmergencyRequestService {
@@ -22,15 +27,18 @@ public class EmergencyRequestService {
     private final EmergencyRequestRepository emergencyRequestRepository;
     private final HospitalResponseRepository hospitalResponseRepository;
     private final HospitalClient hospitalClient;
+    private final RabbitTemplate rabbitTemplate;
 
     public EmergencyRequestService(
             EmergencyRequestRepository emergencyRequestRepository,
             HospitalResponseRepository hospitalResponseRepository,
-            HospitalClient hospitalClient
+            HospitalClient hospitalClient,
+            RabbitTemplate rabbitTemplate
     ) {
         this.emergencyRequestRepository = emergencyRequestRepository;
         this.hospitalResponseRepository = hospitalResponseRepository;
         this.hospitalClient = hospitalClient;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Transactional
@@ -49,6 +57,7 @@ public class EmergencyRequestService {
 
         List<HospitalResponseDto> nearbyHospitals = getNearbyHospitals(savedRequest);
 
+        List<Long> hospitalIds = List.of();
         if (!nearbyHospitals.isEmpty()) {
             List<HospitalResponse> hospitalResponses = nearbyHospitals.stream()
                     .map(hospital -> HospitalResponse.pending(savedRequest.getId(), hospital.hospitalId()))
@@ -56,11 +65,34 @@ public class EmergencyRequestService {
 
             hospitalResponseRepository.saveAll(hospitalResponses);
             savedRequest.broadcast();
+
+            hospitalIds = nearbyHospitals.stream()
+                    .map(HospitalResponseDto::hospitalId)
+                    .toList();
         }
 
         List<CandidateHospitalResponse> candidateHospitals = nearbyHospitals.stream()
                 .map(CandidateHospitalResponse::from)
                 .toList();
+
+        // 3. RabbitMQ로 이벤트 발행 (상태가 BROADCASTED일 경우에만 이벤트 발행)
+        if (savedRequest.getStatus() == com.emergencymatching.emergency.domain.EmergencyRequestStatus.BROADCASTED) {
+            EmergencyRequestCreatedEvent event = new EmergencyRequestCreatedEvent(
+                    savedRequest.getId(),
+                    savedRequest.getParamedicId(),
+                    hospitalIds,
+                    savedRequest.getPatientCondition(),
+                    savedRequest.getPatientGender().name(),
+                    savedRequest.getPatientAgeGroup(),
+                    savedRequest.getSeverityLevel().name(),
+                    savedRequest.getLatitude(),
+                    savedRequest.getLongitude(),
+                    savedRequest.getCreatedAt() != null ? savedRequest.getCreatedAt() : java.time.LocalDateTime.now()
+            );
+
+            rabbitTemplate.convertAndSend("emergency.exchange", "emergency.request.created", event);
+            log.info("응급 요청 생성 실시간 알림 비동기 이벤트 발행 완료 ➔ ID: {}, 전송 대상 병원 수: {}", savedRequest.getId(), hospitalIds.size());
+        }
 
         return EmergencyRequestResponse.from(savedRequest, candidateHospitals);
     }
@@ -78,6 +110,7 @@ public class EmergencyRequestService {
         } catch (Exception exception) {
             // hospital-service 장애가 있어도 응급 요청 기록은 보존한다.
             // 후보 병원 조회 실패는 후보 없음과 동일하게 다루며 REQUESTED 상태를 유지한다.
+            log.warn("Hospital Service 조회 실패 (Fallback 흐름 작동): {}", exception.getMessage());
             return List.of();
         }
     }

@@ -75,6 +75,7 @@ class EmergencyRequestServiceTest {
         assertThat(response.status()).isEqualTo(EmergencyRequestStatus.BROADCASTED);
         assertThat(response.candidateHospitals()).hasSize(2);
 
+        // RabbitMQ 비동기 이벤트 발행 검증
         verify(rabbitTemplate).convertAndSend(
                 eq("emergency.exchange"),
                 eq("emergency.request.created"),

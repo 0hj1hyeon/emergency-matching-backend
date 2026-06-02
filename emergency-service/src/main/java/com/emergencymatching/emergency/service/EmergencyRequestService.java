@@ -76,6 +76,7 @@ public class EmergencyRequestService {
                 .map(CandidateHospitalResponse::from)
                 .toList();
 
+        // 3. RabbitMQ로 이벤트 발행 (상태가 BROADCASTED일 경우에만 이벤트 발행)
         if (savedRequest.getStatus() == com.emergencymatching.emergency.domain.EmergencyRequestStatus.BROADCASTED) {
             EmergencyRequestCreatedEvent event = new EmergencyRequestCreatedEvent(
                     savedRequest.getId(),

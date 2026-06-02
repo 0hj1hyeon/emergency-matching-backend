@@ -33,6 +33,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +47,9 @@ class EmergencyRequestServiceTest {
 
     @Mock
     private HospitalClient hospitalClient;
+
+    @Mock
+    private RabbitTemplate rabbitTemplate;
 
     @InjectMocks
     private EmergencyRequestService emergencyRequestService;
@@ -70,6 +74,12 @@ class EmergencyRequestServiceTest {
         assertThat(response.longitude()).isEqualTo(126.9780);
         assertThat(response.status()).isEqualTo(EmergencyRequestStatus.BROADCASTED);
         assertThat(response.candidateHospitals()).hasSize(2);
+
+        verify(rabbitTemplate).convertAndSend(
+                eq("emergency.exchange"),
+                eq("emergency.request.created"),
+                any(com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent.class)
+        );
     }
 
     @Test

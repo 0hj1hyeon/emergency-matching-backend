@@ -3,6 +3,7 @@ package com.emergencymatching.emergency.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -16,6 +17,7 @@ import com.emergencymatching.emergency.domain.HospitalResponse;
 import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
+import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
@@ -218,7 +220,12 @@ class EmergencyRequestServiceTest {
         given(emergencyRequestRepository.findById(requestId)).willReturn(java.util.Optional.of(emergencyRequest));
         given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
                 .willReturn(java.util.Optional.of(hospitalResponse));
-        // no additional stubbing needed
+        given(hospitalResponseRepository.findByEmergencyRequestId(requestId))
+                .willReturn(List.of(
+                        hospitalResponse,
+                        HospitalResponse.pending(requestId, 20L),
+                        HospitalResponse.pending(requestId, 30L)
+                ));
         
         // when
         emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId);
@@ -228,6 +235,21 @@ class EmergencyRequestServiceTest {
         assertThat(emergencyRequest.getAcceptedHospitalId()).isEqualTo(hospitalId);
         assertThat(hospitalResponse.getStatus()).isEqualTo(HospitalResponseStatus.ACCEPTED);
         assertThat(hospitalResponse.getRespondedAt()).isNotNull();
+
+        ArgumentCaptor<EmergencyRequestAcceptedEvent> eventCaptor =
+                ArgumentCaptor.forClass(EmergencyRequestAcceptedEvent.class);
+        verify(rabbitTemplate).convertAndSend(
+                eq("emergency.exchange"),
+                eq("emergency.request.accepted"),
+                eventCaptor.capture()
+        );
+        EmergencyRequestAcceptedEvent event = eventCaptor.getValue();
+        assertThat(event.emergencyRequestId()).isEqualTo(requestId);
+        assertThat(event.acceptedHospitalId()).isEqualTo(hospitalId);
+        assertThat(event.paramedicId()).isEqualTo(10L);
+        assertThat(event.closedHospitalIds()).containsExactly(20L, 30L);
+        assertThat(event.status()).isEqualTo("ACCEPTED");
+        assertThat(event.acceptedAt()).isNotNull();
     }
 
     @Test
@@ -250,11 +272,12 @@ class EmergencyRequestServiceTest {
                 .willReturn(java.util.Optional.of(hospitalResponse));
         
         // when & then
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+        assertThatThrownBy(() ->
                 emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId)
         )
                 .isInstanceOf(com.emergencymatching.emergency.exception.InvalidRequestException.class)
                 .hasMessageContaining("만료된 요청은 수락할 수 없습니다.");
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
     }
 
     @Test
@@ -301,9 +324,10 @@ class EmergencyRequestServiceTest {
         given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
                 .willReturn(java.util.Optional.of(hospitalResponse));
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+        assertThatThrownBy(() ->
                 emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId)
         ).isInstanceOf(com.emergencymatching.emergency.exception.ConflictException.class);
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
     }
 
     @Test
@@ -321,9 +345,93 @@ class EmergencyRequestServiceTest {
         given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
                 .willReturn(java.util.Optional.empty());
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+        assertThatThrownBy(() ->
                 emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId)
         ).isInstanceOf(com.emergencymatching.emergency.exception.ResourceNotFoundException.class);
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
+    }
+
+    @Test
+    void acceptEmergencyRequestFailsWhenHospitalResponseIsNotPending() {
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        EmergencyRequest emergencyRequest = broadcastedEmergencyRequest(requestId);
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+        hospitalResponse.reject();
+
+        given(emergencyRequestRepository.findById(requestId)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(Optional.of(hospitalResponse));
+
+        assertThatThrownBy(() -> emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId))
+                .isInstanceOf(com.emergencymatching.emergency.exception.InvalidRequestException.class);
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsWhenAlreadyAccepted() {
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        EmergencyRequest emergencyRequest = broadcastedEmergencyRequest(requestId);
+        ReflectionTestUtils.setField(emergencyRequest, "status", EmergencyRequestStatus.ACCEPTED);
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+
+        given(emergencyRequestRepository.findById(requestId)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(Optional.of(hospitalResponse));
+
+        assertThatThrownBy(() -> emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId))
+                .isInstanceOf(com.emergencymatching.emergency.exception.ConflictException.class);
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsWhenExpired() {
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        EmergencyRequest emergencyRequest = broadcastedEmergencyRequest(requestId);
+        ReflectionTestUtils.setField(emergencyRequest, "expiresAt", LocalDateTime.now().minusSeconds(1));
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+
+        given(emergencyRequestRepository.findById(requestId)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(Optional.of(hospitalResponse));
+
+        assertThatThrownBy(() -> emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId))
+                .isInstanceOf(com.emergencymatching.emergency.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsWhenRequestIsNotBroadcasted() {
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L, "Chest pain", PatientGender.MALE, "60s", SeverityLevel.CRITICAL, 37.5665, 126.9780
+        );
+        ReflectionTestUtils.setField(emergencyRequest, "id", requestId);
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+
+        given(emergencyRequestRepository.findById(requestId)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(Optional.of(hospitalResponse));
+
+        assertThatThrownBy(() -> emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId))
+                .isInstanceOf(com.emergencymatching.emergency.exception.InvalidRequestException.class);
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsWhenHospitalResponseIsNotPending() {
+        Long requestId = 1L;
+        Long hospitalId = 10L;
+        EmergencyRequest emergencyRequest = broadcastedEmergencyRequest(requestId);
+        HospitalResponse hospitalResponse = HospitalResponse.pending(requestId, hospitalId);
+        hospitalResponse.accept();
+
+        given(emergencyRequestRepository.findById(requestId)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestIdAndHospitalId(requestId, hospitalId))
+                .willReturn(Optional.of(hospitalResponse));
+
+        assertThatThrownBy(() -> emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId))
+                .isInstanceOf(com.emergencymatching.emergency.exception.InvalidRequestException.class);
     }
 
     @Test
@@ -428,6 +536,21 @@ class EmergencyRequestServiceTest {
         );
         emergencyRequest.broadcast();
         return emergencyRequestWithId(emergencyRequest, id);
+    }
+
+    private EmergencyRequest broadcastedEmergencyRequest(Long id) {
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L,
+                "Chest pain",
+                PatientGender.MALE,
+                "60s",
+                SeverityLevel.CRITICAL,
+                37.5665,
+                126.9780
+        );
+        ReflectionTestUtils.setField(emergencyRequest, "id", id);
+        emergencyRequest.broadcast();
+        return emergencyRequest;
     }
 
     private HospitalResponse hospitalResponseEntity(Long emergencyRequestId, Long hospitalId) {

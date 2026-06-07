@@ -13,6 +13,7 @@ import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
 import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
+import com.emergencymatching.emergency.exception.ForbiddenException;
 import com.emergencymatching.emergency.exception.ResourceNotFoundException;
 import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
@@ -126,7 +127,7 @@ class EmergencyRequestControllerTest {
     @Test
     void getEmergencyRequestDetailReturnsOkResponse() throws Exception {
         LocalDateTime now = LocalDateTime.of(2026, 5, 10, 12, 0);
-        given(emergencyRequestService.getEmergencyRequestDetail(1L))
+        given(emergencyRequestService.getEmergencyRequestDetail(1L, 10L, "ADMIN"))
                 .willReturn(new EmergencyRequestDetailResponse(
                         1L,
                         10L,
@@ -149,7 +150,9 @@ class EmergencyRequestControllerTest {
                         ))
                 ));
 
-        mockMvc.perform(get("/api/emergency-requests/{requestId}", 1L))
+        mockMvc.perform(get("/api/emergency-requests/{requestId}", 1L)
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestId").value(1))
                 .andExpect(jsonPath("$.paramedicId").value(10))
@@ -166,12 +169,26 @@ class EmergencyRequestControllerTest {
 
     @Test
     void getEmergencyRequestDetailReturnsNotFoundWhenRequestDoesNotExist() throws Exception {
-        given(emergencyRequestService.getEmergencyRequestDetail(999L))
+        given(emergencyRequestService.getEmergencyRequestDetail(999L, 10L, "ADMIN"))
                 .willThrow(new ResourceNotFoundException("해당 응급 요청을 찾을 수 없습니다. ID: 999"));
 
-        mockMvc.perform(get("/api/emergency-requests/{requestId}", 999L))
+        mockMvc.perform(get("/api/emergency-requests/{requestId}", 999L)
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "ADMIN"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("해당 응급 요청을 찾을 수 없습니다. ID: 999"));
+    }
+
+    @Test
+    void getEmergencyRequestDetailReturnsForbiddenWhenUserHasNoAccess() throws Exception {
+        given(emergencyRequestService.getEmergencyRequestDetail(1L, 200L, "HOSPITAL"))
+                .willThrow(new ForbiddenException("해당 응급 요청을 조회할 권한이 없습니다."));
+
+        mockMvc.perform(get("/api/emergency-requests/{requestId}", 1L)
+                        .header("X-User-Id", "200")
+                        .header("X-User-Role", "HOSPITAL"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("해당 응급 요청을 조회할 권한이 없습니다."));
     }
 
     @Test

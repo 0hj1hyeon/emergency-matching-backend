@@ -113,8 +113,10 @@ public class EmergencyRequestController {
 
     @GetMapping("/{requestId}")
     public ResponseEntity<EmergencyRequestDetailResponse> getEmergencyRequestDetail(
-            @PathVariable Long requestId
+            @PathVariable("requestId") Long requestId,
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestHeader("X-User-Role") String userRole
     ) {
-        return ResponseEntity.ok(emergencyRequestService.getEmergencyRequestDetail(requestId));
+        return ResponseEntity.ok(emergencyRequestService.getEmergencyRequestDetail(requestId, userId, userRole));
     }
 }

@@ -17,6 +17,8 @@ public interface HospitalResponseRepository extends JpaRepository<HospitalRespon
      */
     Optional<HospitalResponse> findByEmergencyRequestIdAndHospitalId(Long emergencyRequestId, Long hospitalId);
 
+    boolean existsByEmergencyRequestIdAndHospitalId(Long emergencyRequestId, Long hospitalId);
+
     /**
      * 특정 응급 요청 ID에 연동되어 있는 모든 후보 병원들의 응답 목록을 조회합니다.
      * (매칭 완료 시, 다른 후보 병원군을 대상으로 '마감 알림'을 전파하기 위해 사용됩니다.)

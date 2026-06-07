@@ -9,6 +9,7 @@ import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
 import com.emergencymatching.emergency.exception.ConflictException;
+import com.emergencymatching.emergency.exception.ForbiddenException;
 import com.emergencymatching.emergency.exception.InvalidRequestException;
 import com.emergencymatching.emergency.exception.ResourceNotFoundException;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
@@ -125,12 +126,35 @@ public class EmergencyRequestService {
                 .toList();
     }
 
-    public EmergencyRequestDetailResponse getEmergencyRequestDetail(Long requestId) {
+    public EmergencyRequestDetailResponse getEmergencyRequestDetail(Long requestId, Long userId, String userRole) {
         EmergencyRequest emergencyRequest = emergencyRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("해당 응급 요청을 찾을 수 없습니다. ID: " + requestId));
+        validateEmergencyRequestDetailAccess(emergencyRequest, userId, userRole);
+
         List<HospitalResponse> hospitalResponses = hospitalResponseRepository.findByEmergencyRequestId(requestId);
 
         return EmergencyRequestDetailResponse.from(emergencyRequest, hospitalResponses);
+    }
+
+    private void validateEmergencyRequestDetailAccess(
+            EmergencyRequest emergencyRequest,
+            Long userId,
+            String userRole
+    ) {
+        if ("ADMIN".equals(userRole)) {
+            return;
+        }
+
+        if ("PARAMEDIC".equals(userRole) && emergencyRequest.getParamedicId().equals(userId)) {
+            return;
+        }
+
+        if ("HOSPITAL".equals(userRole)
+                && hospitalResponseRepository.existsByEmergencyRequestIdAndHospitalId(emergencyRequest.getId(), userId)) {
+            return;
+        }
+
+        throw new ForbiddenException("해당 응급 요청을 조회할 권한이 없습니다.");
     }
 
     private List<HospitalResponseDto> getNearbyHospitals(EmergencyRequest emergencyRequest) {

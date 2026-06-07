@@ -71,10 +71,11 @@ class AuthServiceTest {
         // given
         AuthDto.LoginRequest request = new AuthDto.LoginRequest("user1", "pass123");
         Member member = new Member("user1", "encodedPass", MemberRole.HOSPITAL);
+        org.springframework.test.util.ReflectionTestUtils.setField(member, "id", 1L);
 
         given(memberRepository.findByUsername(request.getUsername())).willReturn(Optional.of(member));
         given(passwordEncoder.matches(request.getPassword(), member.getPassword())).willReturn(true);
-        given(jwtTokenProvider.createToken(member.getUsername(), member.getRole().name())).willReturn("test-token");
+        given(jwtTokenProvider.createToken(1L, member.getUsername(), member.getRole().name())).willReturn("test-token");
 
         // when
         AuthDto.TokenResponse response = authService.login(request);

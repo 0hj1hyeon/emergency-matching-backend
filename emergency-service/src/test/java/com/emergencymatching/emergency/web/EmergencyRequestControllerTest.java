@@ -42,6 +42,8 @@ class EmergencyRequestControllerTest {
                 .willReturn(emergencyRequestResponse());
 
         mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "PARAMEDIC")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -70,6 +72,8 @@ class EmergencyRequestControllerTest {
     @Test
     void createEmergencyRequestReturnsBadRequestForInvalidRequest() throws Exception {
         mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "PARAMEDIC")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -102,7 +106,9 @@ class EmergencyRequestControllerTest {
                         now.plusMinutes(10)
                 )));
 
-        mockMvc.perform(get("/api/emergency-requests/hospitals/{hospitalId}/pending", 100L))
+        mockMvc.perform(get("/api/emergency-requests/hospitals/{hospitalId}/pending", 100L)
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].requestId").value(1))
                 .andExpect(jsonPath("$[0].patientCondition").value("Chest pain and shortness of breath"))
@@ -115,26 +121,70 @@ class EmergencyRequestControllerTest {
     }
 
     @Test
-    void acceptEndpointReturnsOk() throws Exception {
-        long requestId = 1L;
-        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", requestId)
+    void createEmergencyRequestFailsWhenNotParamedic() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"hospitalId\": 10}"))
+                        .content("""
+                                {
+                                  "paramedicId": 10,
+                                  "patientCondition": "Chest pain and shortness of breath",
+                                  "patientGender": "MALE",
+                                  "patientAgeGroup": "60s",
+                                  "severityLevel": "CRITICAL",
+                                  "latitude": 37.5665,
+                                  "longitude": 126.9780
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void acceptEmergencyRequestSucceedsWithValidHeaders() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 100}"))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void rejectEndpointReturnsOk() throws Exception {
-        long requestId = 1L;
-        mockMvc.perform(post("/api/emergency-requests/{requestId}/reject", requestId)
+    void acceptEmergencyRequestFailsForDifferentHospital() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"hospitalId\": 10}"))
+                        .content("{\"hospitalId\": 200}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectEmergencyRequestSucceedsWithValidHeaders() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/reject")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 100}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsForDifferentHospital() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/reject")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 200}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
     void acceptEndpointReturnsBadRequestForInvalidBody() throws Exception {
-        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", 1L)
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
@@ -146,7 +196,9 @@ class EmergencyRequestControllerTest {
                 .given(emergencyRequestService)
                 .acceptEmergencyRequest(1L, 10L);
 
-        mockMvc.perform(post("/api/emergency-requests/{requestId}/accept", 1L)
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"hospitalId\": 10}"))
                 .andExpect(status().isInternalServerError())

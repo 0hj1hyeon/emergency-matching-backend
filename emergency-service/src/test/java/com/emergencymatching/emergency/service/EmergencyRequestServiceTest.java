@@ -244,10 +244,10 @@ class EmergencyRequestServiceTest {
                 eventCaptor.capture()
         );
         EmergencyRequestAcceptedEvent event = eventCaptor.getValue();
-        assertThat(event.emergencyRequestId()).isEqualTo(requestId);
-        assertThat(event.acceptedHospitalId()).isEqualTo(hospitalId);
+        assertThat(event.requestId()).isEqualTo(requestId);
+        assertThat(event.hospitalId()).isEqualTo(hospitalId);
         assertThat(event.paramedicId()).isEqualTo(10L);
-        assertThat(event.closedHospitalIds()).containsExactly(20L, 30L);
+        assertThat(event.hospitalIds()).containsExactly(20L, 30L);
         assertThat(event.status()).isEqualTo("ACCEPTED");
         assertThat(event.acceptedAt()).isNotNull();
     }

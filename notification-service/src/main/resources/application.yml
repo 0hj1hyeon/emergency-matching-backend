@@ -9,6 +9,14 @@ spring:
     port: 5672
     username: ems_user
     password: ems_password
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          max-interval: 10000ms
+          multiplier: 2.0
 
 management:
   endpoints:

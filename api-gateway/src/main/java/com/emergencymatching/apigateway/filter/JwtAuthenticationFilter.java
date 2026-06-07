@@ -35,18 +35,20 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 
-            // 1. Authorization 헤더 확인
-            if (!request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
-                return onError(exchange.getResponse(), "No authorization header", HttpStatus.UNAUTHORIZED);
-            }
-
+            // 1. Authorization 헤더 또는 쿼리 파라미터에서 토큰 추출
+            String token = null;
             String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return onError(exchange.getResponse(), "Invalid authorization header", HttpStatus.UNAUTHORIZED);
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                token = authHeader.replace("Bearer ", "");
+            } else {
+                token = request.getQueryParams().getFirst("token");
             }
 
-            // 2. 토큰 추출 및 검증
-            String token = authHeader.replace("Bearer ", "");
+            if (token == null) {
+                return onError(exchange.getResponse(), "No token found", HttpStatus.UNAUTHORIZED);
+            }
+
+            // 2. 토큰 검증
             try {
                 Claims claims = Jwts.parser()
                         .verifyWith(key)
@@ -56,10 +58,12 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
 
                 // 3. 토큰에서 정보 추출하여 헤더에 추가
                 String username = claims.getSubject();
+                Long id = claims.get("id", Long.class);
                 String role = claims.get("role", String.class);
 
                 ServerHttpRequest modifiedRequest = request.mutate()
-                        .header("X-User-Id", username)
+                        .header("X-User-Id", id != null ? id.toString() : "")
+                        .header("X-User-Name", username)
                         .header("X-User-Role", role)
                         .build();
 

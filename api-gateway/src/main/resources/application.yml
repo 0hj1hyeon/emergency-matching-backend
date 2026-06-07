@@ -13,6 +13,7 @@ spring:
             allowedOrigins: "http://localhost:3000"
             allowedMethods: "*"
             allowedHeaders: "*"
+            allowCredentials: true
       routes:
         # 로그인, 회원가입은 필터 없이 통과
         - id: auth-service-public

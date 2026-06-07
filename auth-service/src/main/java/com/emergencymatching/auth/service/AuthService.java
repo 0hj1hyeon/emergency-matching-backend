@@ -47,7 +47,7 @@ public class AuthService {
             throw new AuthException("잘못된 비밀번호입니다.", HttpStatus.UNAUTHORIZED);
         }
 
-        String token = jwtTokenProvider.createToken(member.getUsername(), member.getRole().name());
+        String token = jwtTokenProvider.createToken(member.getId(), member.getUsername(), member.getRole().name());
         return new AuthDto.TokenResponse(token);
     }
 }

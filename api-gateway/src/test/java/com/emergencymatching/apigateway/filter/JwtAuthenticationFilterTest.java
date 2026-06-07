@@ -52,6 +52,7 @@ class JwtAuthenticationFilterTest {
 
         return Jwts.builder()
                 .subject("testUser")
+                .claim("id", 1L)
                 .claim("role", "HOSPITAL")
                 .issuedAt(now)
                 .expiration(validity)
@@ -73,9 +74,36 @@ class JwtAuthenticationFilterTest {
         StepVerifier.create(filter.filter(exchange, filterChain))
                 .verifyComplete();
 
-        // 헤더에 값이 잘 주입되었는지 확인 (원본 request는 불변이므로 mutate된 객체를 직접 검증하진 못하지만, 
-        // 체인이 호출되었다는 것 자체가 통과를 의미합니다. 실제 주입은 통합 테스트에서 확실히 검증됩니다.)
-        // 여기서는 에러 없이 통과(Mono.empty())했다는 사실 자체를 검증합니다.
+        org.mockito.ArgumentCaptor<org.springframework.web.server.ServerWebExchange> exchangeCaptor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.web.server.ServerWebExchange.class);
+        org.mockito.Mockito.verify(filterChain).filter(exchangeCaptor.capture());
+        org.springframework.web.server.ServerWebExchange capturedExchange = exchangeCaptor.getValue();
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Id")).isEqualTo("1");
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Name")).isEqualTo("testUser");
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Role")).isEqualTo("HOSPITAL");
+    }
+
+    @Test
+    @DisplayName("성공: Query Parameter로 토큰이 들어오면 필터를 통과하고 헤더가 추가된다 (웹소켓 용)")
+    void filter_success_withTokenQueryParam() {
+        // given
+        String validToken = generateValidToken();
+        MockServerHttpRequest request = MockServerHttpRequest.get("/ws")
+                .queryParam("token", validToken)
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        // when & then
+        StepVerifier.create(filter.filter(exchange, filterChain))
+                .verifyComplete();
+
+        org.mockito.ArgumentCaptor<org.springframework.web.server.ServerWebExchange> exchangeCaptor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.web.server.ServerWebExchange.class);
+        org.mockito.Mockito.verify(filterChain).filter(exchangeCaptor.capture());
+        org.springframework.web.server.ServerWebExchange capturedExchange = exchangeCaptor.getValue();
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Id")).isEqualTo("1");
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Name")).isEqualTo("testUser");
+        assertThat(capturedExchange.getRequest().getHeaders().getFirst("X-User-Role")).isEqualTo("HOSPITAL");
     }
 
     @Test

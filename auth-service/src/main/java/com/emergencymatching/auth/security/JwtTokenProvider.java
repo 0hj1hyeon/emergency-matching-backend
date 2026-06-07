@@ -22,12 +22,13 @@ public class JwtTokenProvider {
         this.validityInMilliseconds = validityInMilliseconds;
     }
 
-    public String createToken(String username, String role) {
+    public String createToken(Long id, String username, String role) {
         Date now = new Date();
         Date validity = new Date(now.getTime() + validityInMilliseconds);
 
         return Jwts.builder()
                 .subject(username)
+                .claim("id", id)
                 .claim("role", role)
                 .issuedAt(now)
                 .expiration(validity)

@@ -41,6 +41,8 @@ class EmergencyRequestControllerTest {
                 .willReturn(emergencyRequestResponse());
 
         mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "PARAMEDIC")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -69,6 +71,8 @@ class EmergencyRequestControllerTest {
     @Test
     void createEmergencyRequestReturnsBadRequestForInvalidRequest() throws Exception {
         mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "PARAMEDIC")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -101,7 +105,9 @@ class EmergencyRequestControllerTest {
                         now.plusMinutes(10)
                 )));
 
-        mockMvc.perform(get("/api/emergency-requests/hospitals/{hospitalId}/pending", 100L))
+        mockMvc.perform(get("/api/emergency-requests/hospitals/{hospitalId}/pending", 100L)
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].requestId").value(1))
                 .andExpect(jsonPath("$[0].patientCondition").value("Chest pain and shortness of breath"))
@@ -111,6 +117,44 @@ class EmergencyRequestControllerTest {
                 .andExpect(jsonPath("$[0].latitude").value(37.5665))
                 .andExpect(jsonPath("$[0].longitude").value(126.9780))
                 .andExpect(jsonPath("$[0].status").value("BROADCASTED"));
+    }
+
+    @Test
+    void createEmergencyRequestFailsWhenNotParamedic() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "paramedicId": 10,
+                                  "patientCondition": "Chest pain and shortness of breath",
+                                  "patientGender": "MALE",
+                                  "patientAgeGroup": "60s",
+                                  "severityLevel": "CRITICAL",
+                                  "latitude": 37.5665,
+                                  "longitude": 126.9780
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void acceptEmergencyRequestSucceedsWithValidHeaders() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .param("hospitalId", "100"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void acceptEmergencyRequestFailsForDifferentHospital() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .param("hospitalId", "200"))
+                .andExpect(status().isBadRequest());
     }
 
     private EmergencyRequestResponse emergencyRequestResponse() {

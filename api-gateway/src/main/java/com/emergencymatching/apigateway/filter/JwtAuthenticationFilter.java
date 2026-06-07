@@ -38,8 +38,12 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
             // 1. Authorization 헤더 또는 쿼리 파라미터에서 토큰 추출
             String token = null;
             String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                token = authHeader.replace("Bearer ", "");
+            if (authHeader != null) {
+                if (authHeader.startsWith("Bearer ")) {
+                    token = authHeader.substring(7);
+                } else {
+                    return onError(exchange.getResponse(), "Invalid authorization header format", HttpStatus.UNAUTHORIZED);
+                }
             } else {
                 token = request.getQueryParams().getFirst("token");
             }

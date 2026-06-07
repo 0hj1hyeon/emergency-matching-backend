@@ -3,6 +3,7 @@ package com.emergencymatching.emergency.web;
 import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
+import com.emergencymatching.emergency.web.dto.HospitalActionRequest;
 import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -60,17 +60,17 @@ public class EmergencyRequestController {
             @RequestHeader("X-User-Id") String userIdHeader,
             @RequestHeader("X-User-Role") String userRoleHeader,
             @PathVariable("requestId") Long requestId,
-            @RequestParam("hospitalId") Long hospitalId
+            @Valid @RequestBody HospitalActionRequest request
     ) {
         if (!"HOSPITAL".equals(userRoleHeader)) {
             throw new IllegalArgumentException("병원 권한이 필요합니다.");
         }
         Long authHospitalId = Long.valueOf(userIdHeader);
-        if (!authHospitalId.equals(hospitalId)) {
+        if (!authHospitalId.equals(request.hospitalId())) {
             throw new IllegalArgumentException("본인 병원의 요청만 수락할 수 있습니다.");
         }
 
-        emergencyRequestService.acceptEmergencyRequest(requestId, hospitalId);
+        emergencyRequestService.acceptEmergencyRequest(requestId, request.hospitalId());
         return ResponseEntity.ok().build();
     }
 
@@ -79,17 +79,17 @@ public class EmergencyRequestController {
             @RequestHeader("X-User-Id") String userIdHeader,
             @RequestHeader("X-User-Role") String userRoleHeader,
             @PathVariable("requestId") Long requestId,
-            @RequestParam("hospitalId") Long hospitalId
+            @Valid @RequestBody HospitalActionRequest request
     ) {
         if (!"HOSPITAL".equals(userRoleHeader)) {
             throw new IllegalArgumentException("병원 권한이 필요합니다.");
         }
         Long authHospitalId = Long.valueOf(userIdHeader);
-        if (!authHospitalId.equals(hospitalId)) {
+        if (!authHospitalId.equals(request.hospitalId())) {
             throw new IllegalArgumentException("본인 병원의 요청만 거절할 수 있습니다.");
         }
 
-        emergencyRequestService.rejectEmergencyRequest(requestId, hospitalId);
+        emergencyRequestService.rejectEmergencyRequest(requestId, request.hospitalId());
         return ResponseEntity.ok().build();
     }
 

@@ -2,6 +2,7 @@ package com.emergencymatching.emergency.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -144,7 +145,8 @@ class EmergencyRequestControllerTest {
         mockMvc.perform(post("/api/emergency-requests/1/accept")
                         .header("X-User-Id", "100")
                         .header("X-User-Role", "HOSPITAL")
-                        .param("hospitalId", "100"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 100}"))
                 .andExpect(status().isOk());
     }
 
@@ -153,8 +155,54 @@ class EmergencyRequestControllerTest {
         mockMvc.perform(post("/api/emergency-requests/1/accept")
                         .header("X-User-Id", "100")
                         .header("X-User-Role", "HOSPITAL")
-                        .param("hospitalId", "200"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 200}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectEmergencyRequestSucceedsWithValidHeaders() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/reject")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 100}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectEmergencyRequestFailsForDifferentHospital() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/reject")
+                        .header("X-User-Id", "100")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 200}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void acceptEndpointReturnsBadRequestForInvalidBody() throws Exception {
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void genericExceptionReturnsSafeErrorMessage() throws Exception {
+        willThrow(new RuntimeException("internal secret"))
+                .given(emergencyRequestService)
+                .acceptEmergencyRequest(1L, 10L);
+
+        mockMvc.perform(post("/api/emergency-requests/1/accept")
+                        .header("X-User-Id", "10")
+                        .header("X-User-Role", "HOSPITAL")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalId\": 10}"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error").value("서버 내부 오류가 발생했습니다."));
     }
 
     private EmergencyRequestResponse emergencyRequestResponse() {

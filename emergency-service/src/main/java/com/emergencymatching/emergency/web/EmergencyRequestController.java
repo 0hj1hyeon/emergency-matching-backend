@@ -2,6 +2,7 @@ package com.emergencymatching.emergency.web;
 
 import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
+import com.emergencymatching.emergency.web.dto.EmergencyRequestDetailResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import com.emergencymatching.emergency.web.dto.HospitalActionRequest;
 import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
@@ -108,5 +109,12 @@ public class EmergencyRequestController {
         }
 
         return ResponseEntity.ok(emergencyRequestService.getPendingRequestsByHospital(hospitalId));
+    }
+
+    @GetMapping("/{requestId}")
+    public ResponseEntity<EmergencyRequestDetailResponse> getEmergencyRequestDetail(
+            @PathVariable Long requestId
+    ) {
+        return ResponseEntity.ok(emergencyRequestService.getEmergencyRequestDetail(requestId));
     }
 }

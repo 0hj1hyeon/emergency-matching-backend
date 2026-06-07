@@ -15,6 +15,7 @@ import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
+import com.emergencymatching.emergency.web.dto.EmergencyRequestDetailResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import java.time.LocalDateTime;
@@ -122,6 +123,14 @@ public class EmergencyRequestService {
                 .stream()
                 .map(PendingEmergencyRequestResponse::from)
                 .toList();
+    }
+
+    public EmergencyRequestDetailResponse getEmergencyRequestDetail(Long requestId) {
+        EmergencyRequest emergencyRequest = emergencyRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("해당 응급 요청을 찾을 수 없습니다. ID: " + requestId));
+        List<HospitalResponse> hospitalResponses = hospitalResponseRepository.findByEmergencyRequestId(requestId);
+
+        return EmergencyRequestDetailResponse.from(emergencyRequest, hospitalResponses);
     }
 
     private List<HospitalResponseDto> getNearbyHospitals(EmergencyRequest emergencyRequest) {

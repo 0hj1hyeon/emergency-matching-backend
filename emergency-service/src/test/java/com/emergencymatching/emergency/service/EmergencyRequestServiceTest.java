@@ -21,6 +21,7 @@ import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
 import com.emergencymatching.emergency.repository.HospitalResponseRepository;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
+import com.emergencymatching.emergency.web.dto.EmergencyRequestDetailResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import jakarta.validation.ConstraintViolation;
@@ -489,6 +490,67 @@ class EmergencyRequestServiceTest {
 
         assertThat(responses).isEmpty();
         verify(emergencyRequestRepository, never()).findAllByIdIn(any());
+    }
+
+    @Test
+    void getEmergencyRequestDetailSucceeds() {
+        EmergencyRequest emergencyRequest = emergencyRequest(1L, "Chest pain and shortness of breath");
+        given(emergencyRequestRepository.findById(1L)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestId(1L))
+                .willReturn(List.of(
+                        hospitalResponseEntity(1L, 100L),
+                        hospitalResponseEntity(1L, 200L)
+                ));
+
+        EmergencyRequestDetailResponse response = emergencyRequestService.getEmergencyRequestDetail(1L);
+
+        assertThat(response.requestId()).isEqualTo(1L);
+        assertThat(response.paramedicId()).isEqualTo(10L);
+        assertThat(response.patientCondition()).isEqualTo("Chest pain and shortness of breath");
+        assertThat(response.patientGender()).isEqualTo(PatientGender.MALE);
+        assertThat(response.patientAgeGroup()).isEqualTo("60s");
+        assertThat(response.severityLevel()).isEqualTo(SeverityLevel.CRITICAL);
+        assertThat(response.latitude()).isEqualTo(37.5665);
+        assertThat(response.longitude()).isEqualTo(126.9780);
+        assertThat(response.status()).isEqualTo(EmergencyRequestStatus.BROADCASTED);
+        assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 5, 10, 12, 0));
+        assertThat(response.updatedAt()).isEqualTo(LocalDateTime.of(2026, 5, 10, 12, 0));
+        assertThat(response.expiresAt()).isNotNull();
+    }
+
+    @Test
+    void getEmergencyRequestDetailReturnsHospitalResponsesTogether() {
+        EmergencyRequest emergencyRequest = emergencyRequest(1L, "Chest pain and shortness of breath");
+        given(emergencyRequestRepository.findById(1L)).willReturn(Optional.of(emergencyRequest));
+        given(hospitalResponseRepository.findByEmergencyRequestId(1L))
+                .willReturn(List.of(
+                        hospitalResponseEntity(1L, 100L),
+                        hospitalResponseEntity(1L, 200L)
+                ));
+
+        EmergencyRequestDetailResponse response = emergencyRequestService.getEmergencyRequestDetail(1L);
+
+        assertThat(response.hospitalResponses()).hasSize(2);
+        assertThat(response.hospitalResponses())
+                .extracting(EmergencyRequestDetailResponse.HospitalResponseDetail::hospitalId)
+                .containsExactly(100L, 200L);
+        assertThat(response.hospitalResponses())
+                .extracting(EmergencyRequestDetailResponse.HospitalResponseDetail::status)
+                .containsOnly(HospitalResponseStatus.PENDING);
+        assertThat(response.hospitalResponses())
+                .extracting(EmergencyRequestDetailResponse.HospitalResponseDetail::createdAt)
+                .containsOnly(LocalDateTime.of(2026, 5, 10, 12, 0));
+    }
+
+    @Test
+    void getEmergencyRequestDetailThrowsWhenRequestDoesNotExist() {
+        given(emergencyRequestRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> emergencyRequestService.getEmergencyRequestDetail(999L))
+                .isInstanceOf(com.emergencymatching.emergency.exception.ResourceNotFoundException.class)
+                .hasMessageContaining("해당 응급 요청을 찾을 수 없습니다.");
+
+        verify(hospitalResponseRepository, never()).findByEmergencyRequestId(any());
     }
 
     private CreateEmergencyRequestRequest createRequest() {

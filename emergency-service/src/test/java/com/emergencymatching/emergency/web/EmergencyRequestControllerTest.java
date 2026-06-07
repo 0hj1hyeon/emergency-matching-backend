@@ -10,11 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.emergencymatching.emergency.domain.EmergencyRequestStatus;
+import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
+import com.emergencymatching.emergency.exception.ResourceNotFoundException;
 import com.emergencymatching.emergency.service.EmergencyRequestService;
 import com.emergencymatching.emergency.web.dto.CandidateHospitalResponse;
 import com.emergencymatching.emergency.web.dto.CreateEmergencyRequestRequest;
+import com.emergencymatching.emergency.web.dto.EmergencyRequestDetailResponse;
 import com.emergencymatching.emergency.web.dto.EmergencyRequestResponse;
 import com.emergencymatching.emergency.web.dto.PendingEmergencyRequestResponse;
 import java.time.LocalDateTime;
@@ -118,6 +121,57 @@ class EmergencyRequestControllerTest {
                 .andExpect(jsonPath("$[0].latitude").value(37.5665))
                 .andExpect(jsonPath("$[0].longitude").value(126.9780))
                 .andExpect(jsonPath("$[0].status").value("BROADCASTED"));
+    }
+
+    @Test
+    void getEmergencyRequestDetailReturnsOkResponse() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 10, 12, 0);
+        given(emergencyRequestService.getEmergencyRequestDetail(1L))
+                .willReturn(new EmergencyRequestDetailResponse(
+                        1L,
+                        10L,
+                        "Chest pain and shortness of breath",
+                        PatientGender.MALE,
+                        "60s",
+                        SeverityLevel.CRITICAL,
+                        37.5665,
+                        126.9780,
+                        EmergencyRequestStatus.BROADCASTED,
+                        null,
+                        now,
+                        now,
+                        now.plusMinutes(10),
+                        List.of(new EmergencyRequestDetailResponse.HospitalResponseDetail(
+                                100L,
+                                HospitalResponseStatus.PENDING,
+                                null,
+                                now
+                        ))
+                ));
+
+        mockMvc.perform(get("/api/emergency-requests/{requestId}", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestId").value(1))
+                .andExpect(jsonPath("$.paramedicId").value(10))
+                .andExpect(jsonPath("$.patientCondition").value("Chest pain and shortness of breath"))
+                .andExpect(jsonPath("$.patientGender").value("MALE"))
+                .andExpect(jsonPath("$.patientAgeGroup").value("60s"))
+                .andExpect(jsonPath("$.severityLevel").value("CRITICAL"))
+                .andExpect(jsonPath("$.latitude").value(37.5665))
+                .andExpect(jsonPath("$.longitude").value(126.9780))
+                .andExpect(jsonPath("$.status").value("BROADCASTED"))
+                .andExpect(jsonPath("$.hospitalResponses[0].hospitalId").value(100))
+                .andExpect(jsonPath("$.hospitalResponses[0].status").value("PENDING"));
+    }
+
+    @Test
+    void getEmergencyRequestDetailReturnsNotFoundWhenRequestDoesNotExist() throws Exception {
+        given(emergencyRequestService.getEmergencyRequestDetail(999L))
+                .willThrow(new ResourceNotFoundException("해당 응급 요청을 찾을 수 없습니다. ID: 999"));
+
+        mockMvc.perform(get("/api/emergency-requests/{requestId}", 999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("해당 응급 요청을 찾을 수 없습니다. ID: 999"));
     }
 
     @Test

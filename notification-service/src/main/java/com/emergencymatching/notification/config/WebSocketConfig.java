@@ -71,24 +71,26 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        org.springframework.util.AntPathMatcher pathMatcher = new org.springframework.util.AntPathMatcher();
         registration.interceptors(new ChannelInterceptor() {
             @Override
             public Message<?> preSend(Message<?> message, MessageChannel channel) {
                 StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
                 
                 if (accessor != null) {
-                    // CONNECT 시점에 Principal 설정
+                    // CONNECT 시점에 Principal 설정 및 미인증 사용자 차단
                     if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                         Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-                        if (sessionAttributes != null) {
-                            String userId = (String) sessionAttributes.get("userId");
-                            String userRole = (String) sessionAttributes.get("userRole");
-                            
-                            if (userId != null && userRole != null) {
-                                StompPrincipal principal = new StompPrincipal(userId, userRole);
-                                accessor.setUser(principal);
-                            }
+                        if (sessionAttributes == null || 
+                            sessionAttributes.get("userId") == null || 
+                            sessionAttributes.get("userRole") == null) {
+                            throw new IllegalArgumentException("인증 정보가 누락되었습니다.");
                         }
+                        
+                        String userId = (String) sessionAttributes.get("userId");
+                        String userRole = (String) sessionAttributes.get("userRole");
+                        StompPrincipal principal = new StompPrincipal(userId, userRole);
+                        accessor.setUser(principal);
                     }
                     
                     // SUBSCRIBE 시점에 채널 권한(도청 방지) 검증
@@ -100,17 +102,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                                 throw new IllegalArgumentException("인증된 사용자만 구독할 수 있습니다.");
                             }
 
-                            if (destination.startsWith("/topic/hospitals/")) {
-                                // 형식: /topic/hospitals/{hospitalId}/requests
-                                String[] parts = destination.split("/");
-                                if (parts.length >= 4 && "requests".equals(parts[3])) {
-                                    String pathHospitalId = parts[2];
-                                    if (!"HOSPITAL".equals(principal.getRole()) || !principal.getName().equals(pathHospitalId)) {
-                                        throw new IllegalArgumentException("해당 병원 채널에 대한 구독 권한이 없습니다.");
-                                    }
+                            if (pathMatcher.match("/topic/hospitals/{hospitalId}/requests", destination)) {
+                                String pathHospitalId = pathMatcher.extractUriTemplateVariables("/topic/hospitals/{hospitalId}/requests", destination).get("hospitalId");
+                                if (!"HOSPITAL".equals(principal.getRole()) || !principal.getName().equals(pathHospitalId)) {
+                                    throw new IllegalArgumentException("해당 병원 채널에 대한 구독 권한이 없습니다.");
                                 }
-                            } else if (destination.startsWith("/topic/emergency/")) {
-                                // 형식: /topic/emergency/{requestId}/status
+                            } else if (pathMatcher.match("/topic/emergency/{requestId}/status", destination)) {
                                 if (!"PARAMEDIC".equals(principal.getRole())) {
                                     throw new IllegalArgumentException("대원 알림 채널은 구급대원만 구독할 수 있습니다.");
                                 }

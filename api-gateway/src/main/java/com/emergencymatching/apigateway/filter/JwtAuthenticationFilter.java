@@ -59,10 +59,13 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 // 3. 토큰에서 정보 추출하여 헤더에 추가
                 String username = claims.getSubject();
                 Long id = claims.get("id", Long.class);
+                if (id == null) {
+                    return onError(exchange.getResponse(), "User ID claim is missing", HttpStatus.UNAUTHORIZED);
+                }
                 String role = claims.get("role", String.class);
 
                 ServerHttpRequest modifiedRequest = request.mutate()
-                        .header("X-User-Id", id != null ? id.toString() : "")
+                        .header("X-User-Id", id.toString())
                         .header("X-User-Name", username)
                         .header("X-User-Role", role)
                         .build();

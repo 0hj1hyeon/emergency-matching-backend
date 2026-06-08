@@ -610,6 +610,109 @@ class EmergencyRequestServiceTest {
         verify(hospitalResponseRepository, never()).findByEmergencyRequestId(any());
     }
 
+    @Test
+    void expireExpiredEmergencyRequestsExpiresRequestedRequest() {
+        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.REQUESTED);
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(emergencyRequest));
+        given(hospitalResponseRepository.findAllByEmergencyRequestIdInAndStatus(
+                List.of(1L),
+                HospitalResponseStatus.PENDING
+        )).willReturn(List.of());
+
+        int expiredCount = emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(expiredCount).isEqualTo(1);
+        assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.EXPIRED);
+        verify(emergencyRequestRepository).saveAll(List.of(emergencyRequest));
+    }
+
+    @Test
+    void expireExpiredEmergencyRequestsExpiresBroadcastedRequest() {
+        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.BROADCASTED);
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(emergencyRequest));
+        given(hospitalResponseRepository.findAllByEmergencyRequestIdInAndStatus(
+                List.of(1L),
+                HospitalResponseStatus.PENDING
+        )).willReturn(List.of());
+
+        int expiredCount = emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(expiredCount).isEqualTo(1);
+        assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.EXPIRED);
+        verify(emergencyRequestRepository).saveAll(List.of(emergencyRequest));
+    }
+
+    @Test
+    void expireExpiredEmergencyRequestsDoesNotExpireAcceptedRequest() {
+        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.ACCEPTED);
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(emergencyRequest));
+
+        int expiredCount = emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(expiredCount).isZero();
+        assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.ACCEPTED);
+        verify(emergencyRequestRepository, never()).saveAll(any());
+        verify(hospitalResponseRepository, never()).findAllByEmergencyRequestIdInAndStatus(any(), any());
+    }
+
+    @Test
+    void expireExpiredEmergencyRequestsChangesPendingHospitalResponseToTimeout() {
+        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.BROADCASTED);
+        HospitalResponse pendingResponse = hospitalResponseEntity(1L, 100L);
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(emergencyRequest));
+        given(hospitalResponseRepository.findAllByEmergencyRequestIdInAndStatus(
+                List.of(1L),
+                HospitalResponseStatus.PENDING
+        )).willReturn(List.of(pendingResponse));
+
+        emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(pendingResponse.getStatus()).isEqualTo(HospitalResponseStatus.TIMEOUT);
+        assertThat(pendingResponse.getRespondedAt()).isNotNull();
+        verify(hospitalResponseRepository).saveAll(List.of(pendingResponse));
+    }
+
+    @Test
+    void expireExpiredEmergencyRequestsDoesNotChangeAcceptedOrRejectedHospitalResponses() {
+        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.BROADCASTED);
+        HospitalResponse pendingResponse = hospitalResponseEntity(1L, 100L);
+        HospitalResponse acceptedResponse = hospitalResponseEntity(1L, 200L);
+        acceptedResponse.accept();
+        HospitalResponse rejectedResponse = hospitalResponseEntity(1L, 300L);
+        rejectedResponse.reject();
+
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(emergencyRequest));
+        given(hospitalResponseRepository.findAllByEmergencyRequestIdInAndStatus(
+                List.of(1L),
+                HospitalResponseStatus.PENDING
+        )).willReturn(List.of(pendingResponse));
+
+        emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(pendingResponse.getStatus()).isEqualTo(HospitalResponseStatus.TIMEOUT);
+        assertThat(acceptedResponse.getStatus()).isEqualTo(HospitalResponseStatus.ACCEPTED);
+        assertThat(rejectedResponse.getStatus()).isEqualTo(HospitalResponseStatus.REJECTED);
+        verify(hospitalResponseRepository).findAllByEmergencyRequestIdInAndStatus(
+                List.of(1L),
+                HospitalResponseStatus.PENDING
+        );
+    }
+
     private CreateEmergencyRequestRequest createRequest() {
         return new CreateEmergencyRequestRequest(
                 10L,
@@ -681,6 +784,22 @@ class EmergencyRequestServiceTest {
                 LocalDateTime.of(2026, 5, 10, 12, 0)
         );
         return hospitalResponse;
+    }
+
+    private EmergencyRequest expiredEmergencyRequest(Long id, EmergencyRequestStatus status) {
+        EmergencyRequest emergencyRequest = EmergencyRequest.create(
+                10L,
+                "Chest pain",
+                PatientGender.MALE,
+                "60s",
+                SeverityLevel.CRITICAL,
+                37.5665,
+                126.9780
+        );
+        ReflectionTestUtils.setField(emergencyRequest, "id", id);
+        ReflectionTestUtils.setField(emergencyRequest, "status", status);
+        ReflectionTestUtils.setField(emergencyRequest, "expiresAt", LocalDateTime.now().minusSeconds(1));
+        return emergencyRequest;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

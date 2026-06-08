@@ -19,3 +19,8 @@ management:
     web:
       exposure:
         include: health,info
+
+emergency:
+  expiration:
+    scheduler:
+      fixed-delay-ms: 10000

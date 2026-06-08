@@ -25,6 +25,11 @@ public interface HospitalResponseRepository extends JpaRepository<HospitalRespon
      */
     List<HospitalResponse> findByEmergencyRequestId(Long emergencyRequestId);
 
+    List<HospitalResponse> findAllByEmergencyRequestIdInAndStatus(
+            List<Long> emergencyRequestIds,
+            HospitalResponseStatus status
+    );
+
     /**
      * 특정 병원 ID와 상태를 기반으로 매칭 대기 중인 응답 목록을 조회합니다.
      */

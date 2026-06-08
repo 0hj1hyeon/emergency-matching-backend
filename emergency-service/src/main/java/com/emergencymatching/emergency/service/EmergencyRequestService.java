@@ -136,6 +136,43 @@ public class EmergencyRequestService {
         return EmergencyRequestDetailResponse.from(emergencyRequest, hospitalResponses);
     }
 
+    @Transactional
+    public int expireExpiredEmergencyRequests() {
+        LocalDateTime now = LocalDateTime.now();
+        List<EmergencyRequest> expiredRequests = emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED),
+                now
+        ).stream()
+                .filter(this::isExpirable)
+                .toList();
+
+        if (expiredRequests.isEmpty()) {
+            return 0;
+        }
+
+        expiredRequests.forEach(EmergencyRequest::expire);
+        emergencyRequestRepository.saveAll(expiredRequests);
+
+        List<Long> emergencyRequestIds = expiredRequests.stream()
+                .map(EmergencyRequest::getId)
+                .toList();
+        List<HospitalResponse> pendingResponses = hospitalResponseRepository.findAllByEmergencyRequestIdInAndStatus(
+                emergencyRequestIds,
+                HospitalResponseStatus.PENDING
+        );
+        pendingResponses.forEach(HospitalResponse::timeout);
+        hospitalResponseRepository.saveAll(pendingResponses);
+
+        log.info("만료된 응급 요청 처리 완료 ➔ 요청 수: {}, 병원 응답 타임아웃 수: {}",
+                expiredRequests.size(), pendingResponses.size());
+        return expiredRequests.size();
+    }
+
+    private boolean isExpirable(EmergencyRequest emergencyRequest) {
+        return emergencyRequest.getStatus() == EmergencyRequestStatus.REQUESTED
+                || emergencyRequest.getStatus() == EmergencyRequestStatus.BROADCASTED;
+    }
+
     private void validateEmergencyRequestDetailAccess(
             EmergencyRequest emergencyRequest,
             Long userId,

@@ -63,6 +63,14 @@ public class HospitalResponse {
         this.respondedAt = LocalDateTime.now();
     }
 
+    public void timeout() {
+        if (this.status != HospitalResponseStatus.PENDING) {
+            throw new IllegalStateException("대기 상태(PENDING)의 병원 응답만 타임아웃 처리할 수 있습니다.");
+        }
+        this.status = HospitalResponseStatus.TIMEOUT;
+        this.respondedAt = LocalDateTime.now();
+    }
+
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();

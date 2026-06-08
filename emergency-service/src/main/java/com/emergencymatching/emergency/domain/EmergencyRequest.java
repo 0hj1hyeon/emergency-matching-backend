@@ -125,6 +125,14 @@ public class EmergencyRequest {
         this.acceptedHospitalId = hospitalId;
     }
 
+    public void expire() {
+        if (this.status != EmergencyRequestStatus.REQUESTED
+                && this.status != EmergencyRequestStatus.BROADCASTED) {
+            throw new IllegalStateException("REQUESTED 또는 BROADCASTED 상태의 요청만 만료 처리할 수 있습니다.");
+        }
+        this.status = EmergencyRequestStatus.EXPIRED;
+    }
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();

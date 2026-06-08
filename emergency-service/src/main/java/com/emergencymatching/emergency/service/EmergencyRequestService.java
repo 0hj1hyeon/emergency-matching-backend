@@ -8,6 +8,7 @@ import com.emergencymatching.emergency.domain.HospitalResponse;
 import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
 import com.emergencymatching.emergency.event.EmergencyRequestCreatedEvent;
+import com.emergencymatching.emergency.event.EmergencyRequestExpiredEvent;
 import com.emergencymatching.emergency.exception.ConflictException;
 import com.emergencymatching.emergency.exception.ForbiddenException;
 import com.emergencymatching.emergency.exception.InvalidRequestException;
@@ -142,9 +143,7 @@ public class EmergencyRequestService {
         List<EmergencyRequest> expiredRequests = emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
                 List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED),
                 now
-        ).stream()
-                .filter(this::isExpirable)
-                .toList();
+        );
 
         if (expiredRequests.isEmpty()) {
             return 0;
@@ -163,14 +162,31 @@ public class EmergencyRequestService {
         pendingResponses.forEach(HospitalResponse::timeout);
         hospitalResponseRepository.saveAll(pendingResponses);
 
+        expiredRequests.forEach(expiredRequest -> publishExpiredEvent(expiredRequest, pendingResponses, now));
+
         log.info("만료된 응급 요청 처리 완료 ➔ 요청 수: {}, 병원 응답 타임아웃 수: {}",
                 expiredRequests.size(), pendingResponses.size());
         return expiredRequests.size();
     }
 
-    private boolean isExpirable(EmergencyRequest emergencyRequest) {
-        return emergencyRequest.getStatus() == EmergencyRequestStatus.REQUESTED
-                || emergencyRequest.getStatus() == EmergencyRequestStatus.BROADCASTED;
+    private void publishExpiredEvent(
+            EmergencyRequest expiredRequest,
+            List<HospitalResponse> timeoutResponses,
+            LocalDateTime expiredAt
+    ) {
+        List<Long> expiredHospitalIds = timeoutResponses.stream()
+                .filter(response -> response.getEmergencyRequestId().equals(expiredRequest.getId()))
+                .map(HospitalResponse::getHospitalId)
+                .toList();
+
+        EmergencyRequestExpiredEvent event = new EmergencyRequestExpiredEvent(
+                expiredRequest.getId(),
+                expiredRequest.getParamedicId(),
+                expiredHospitalIds,
+                expiredRequest.getStatus().name(),
+                expiredAt
+        );
+        publishAfterCommit("emergency.request.expired", event);
     }
 
     private void validateEmergencyRequestDetailAccess(

@@ -18,6 +18,7 @@ import com.emergencymatching.emergency.domain.HospitalResponseStatus;
 import com.emergencymatching.emergency.domain.PatientGender;
 import com.emergencymatching.emergency.domain.SeverityLevel;
 import com.emergencymatching.emergency.event.EmergencyRequestAcceptedEvent;
+import com.emergencymatching.emergency.event.EmergencyRequestExpiredEvent;
 import com.emergencymatching.emergency.exception.ForbiddenException;
 import com.emergencymatching.emergency.exception.ResourceNotFoundException;
 import com.emergencymatching.emergency.repository.EmergencyRequestRepository;
@@ -627,6 +628,12 @@ class EmergencyRequestServiceTest {
         assertThat(expiredCount).isEqualTo(1);
         assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.EXPIRED);
         verify(emergencyRequestRepository).saveAll(List.of(emergencyRequest));
+        EmergencyRequestExpiredEvent event = captureExpiredEvent();
+        assertThat(event.emergencyRequestId()).isEqualTo(1L);
+        assertThat(event.paramedicId()).isEqualTo(10L);
+        assertThat(event.expiredHospitalIds()).isEmpty();
+        assertThat(event.status()).isEqualTo("EXPIRED");
+        assertThat(event.expiredAt()).isNotNull();
     }
 
     @Test
@@ -646,22 +653,39 @@ class EmergencyRequestServiceTest {
         assertThat(expiredCount).isEqualTo(1);
         assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.EXPIRED);
         verify(emergencyRequestRepository).saveAll(List.of(emergencyRequest));
+        EmergencyRequestExpiredEvent event = captureExpiredEvent();
+        assertThat(event.emergencyRequestId()).isEqualTo(1L);
+        assertThat(event.status()).isEqualTo("EXPIRED");
     }
 
     @Test
     void expireExpiredEmergencyRequestsDoesNotExpireAcceptedRequest() {
-        EmergencyRequest emergencyRequest = expiredEmergencyRequest(1L, EmergencyRequestStatus.ACCEPTED);
         given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
                 eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
                 any(LocalDateTime.class)
-        )).willReturn(List.of(emergencyRequest));
+        )).willReturn(List.of());
 
         int expiredCount = emergencyRequestService.expireExpiredEmergencyRequests();
 
         assertThat(expiredCount).isZero();
-        assertThat(emergencyRequest.getStatus()).isEqualTo(EmergencyRequestStatus.ACCEPTED);
         verify(emergencyRequestRepository, never()).saveAll(any());
         verify(hospitalResponseRepository, never()).findAllByEmergencyRequestIdInAndStatus(any(), any());
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), eq("emergency.request.expired"), any(Object.class));
+    }
+
+    @Test
+    void expireExpiredEmergencyRequestsDoesNotExpireCanceledRequest() {
+        given(emergencyRequestRepository.findAllByStatusInAndExpiresAtBefore(
+                eq(List.of(EmergencyRequestStatus.REQUESTED, EmergencyRequestStatus.BROADCASTED)),
+                any(LocalDateTime.class)
+        )).willReturn(List.of());
+
+        int expiredCount = emergencyRequestService.expireExpiredEmergencyRequests();
+
+        assertThat(expiredCount).isZero();
+        verify(emergencyRequestRepository, never()).saveAll(any());
+        verify(hospitalResponseRepository, never()).findAllByEmergencyRequestIdInAndStatus(any(), any());
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), eq("emergency.request.expired"), any(Object.class));
     }
 
     @Test
@@ -682,6 +706,8 @@ class EmergencyRequestServiceTest {
         assertThat(pendingResponse.getStatus()).isEqualTo(HospitalResponseStatus.TIMEOUT);
         assertThat(pendingResponse.getRespondedAt()).isNotNull();
         verify(hospitalResponseRepository).saveAll(List.of(pendingResponse));
+        EmergencyRequestExpiredEvent event = captureExpiredEvent();
+        assertThat(event.expiredHospitalIds()).containsExactly(100L);
     }
 
     @Test
@@ -711,6 +737,8 @@ class EmergencyRequestServiceTest {
                 List.of(1L),
                 HospitalResponseStatus.PENDING
         );
+        EmergencyRequestExpiredEvent event = captureExpiredEvent();
+        assertThat(event.expiredHospitalIds()).containsExactly(100L);
     }
 
     private CreateEmergencyRequestRequest createRequest() {
@@ -800,6 +828,17 @@ class EmergencyRequestServiceTest {
         ReflectionTestUtils.setField(emergencyRequest, "status", status);
         ReflectionTestUtils.setField(emergencyRequest, "expiresAt", LocalDateTime.now().minusSeconds(1));
         return emergencyRequest;
+    }
+
+    private EmergencyRequestExpiredEvent captureExpiredEvent() {
+        ArgumentCaptor<EmergencyRequestExpiredEvent> eventCaptor =
+                ArgumentCaptor.forClass(EmergencyRequestExpiredEvent.class);
+        verify(rabbitTemplate).convertAndSend(
+                eq("emergency.exchange"),
+                eq("emergency.request.expired"),
+                eventCaptor.capture()
+        );
+        return eventCaptor.getValue();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

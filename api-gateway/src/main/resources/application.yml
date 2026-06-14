@@ -33,7 +33,7 @@ spring:
         - id: emergency-service
           uri: http://localhost:8083
           predicates:
-            - Path=/api/emergencies/**
+            - Path=/api/emergency-requests/**
           filters:
             - JwtAuthenticationFilter
 
